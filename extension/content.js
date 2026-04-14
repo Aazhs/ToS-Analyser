@@ -234,6 +234,7 @@ function hasProviderAndAuthIntent(text) {
 
 function isLikelyAuthActionElement(element) {
   if (!(element instanceof Element)) return false;
+  if (element.closest("#ai-tos-overlay")) return false;
 
   const label = elementLabel(element);
   const tokens = elementTokens(element);
@@ -357,7 +358,9 @@ function isActionElementVisible(element) {
 function blockActionButtons(buttons) {
   unblockActionButtons();
 
-  const unique = [...new Set(buttons)].filter((el) => el && el.isConnected && isActionElementVisible(el)).slice(0, 20);
+  const unique = [...new Set(buttons)]
+    .filter((el) => el && el.isConnected && isActionElementVisible(el) && !el.closest("#ai-tos-overlay"))
+    .slice(0, 20);
   unique.forEach((element) => {
     const state = {
       element,
@@ -752,10 +755,25 @@ function guardBlockedInteractions() {
   document.addEventListener(
     "click",
     (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest("#ai-tos-ack")) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      handleAcknowledge();
+    },
+    true
+  );
+
+  document.addEventListener(
+    "click",
+    (event) => {
       if (!currentSession.requireAck || currentSession.acknowledged) return;
 
       const target = event.target;
       if (!(target instanceof Element)) return;
+      if (target.closest("#ai-tos-overlay")) return;
 
       const blocked = target.closest("[data-tos-analyzer-blocked='1']");
       const clickableCandidate = target.closest(
@@ -779,6 +797,7 @@ function guardBlockedInteractions() {
       if (!currentSession.requireAck || currentSession.acknowledged) return;
       const form = event.target;
       if (!(form instanceof HTMLFormElement)) return;
+      if (form.closest("#ai-tos-overlay")) return;
 
       const hasBlocked = Boolean(form.querySelector("[data-tos-analyzer-blocked='1']"));
       if (!hasBlocked) {
