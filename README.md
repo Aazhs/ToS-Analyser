@@ -1,6 +1,7 @@
 # AI-Powered Terms of Service Analyzer (MVP)
 
 Hackathon-ready full-stack prototype with:
+
 - Chrome Extension (Manifest v3)
 - FastAPI backend (`/analyze`, `/history`)
 - React + Vite + Tailwind dashboard (landing analytics + search)
@@ -146,6 +147,7 @@ npm run dev
 ### 3) Chrome Extension
 
 Same as Linux/macOS:
+
 - `chrome://extensions` -> Developer mode -> Load unpacked -> select `extension/`
 
 ## API Endpoints
@@ -194,6 +196,7 @@ uvicorn main:app --reload --port 8000
 ### `Unexpected token 'I' ... is not valid JSON`
 
 Usually means backend returned plain text error (like `Internal Server Error`).
+
 - Check backend terminal logs for stack trace.
 - Ensure backend is running on `http://localhost:8000`.
 
