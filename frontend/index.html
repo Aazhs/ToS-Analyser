@@ -3,7 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Modern dashboard for analyzing Terms of Service risk with FastAPI, ToS;DR, AI fallback, and Supabase history."
+    />
     <title>ToS Analyzer Dashboard</title>
+    <script>
+      (function () {
+        try {
+          var savedTheme = localStorage.getItem("tos-theme");
+          var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var theme = savedTheme === "dark" || savedTheme === "light" ? savedTheme : prefersDark ? "dark" : "light";
+          if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+          }
+          document.documentElement.style.colorScheme = theme;
+        } catch (error) {
+          console.warn("Theme bootstrap failed", error);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
