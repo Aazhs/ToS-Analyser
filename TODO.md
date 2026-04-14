@@ -1,8 +1,8 @@
-Add a storage system database where all the ai responses are stored so they dont have to be regenerated. (use supabase or something idk)
+Add a storage system database where all the ai responses are stored so they dont have to be regenerated. (use supabase or something idk) ( **supabase Integrated** )
 
-Make better UI for website and extension
+Make better UI for website and extension ( Website **FIXED** )
 
-Add score rating system (green -> red) for each site (think this already exists but doesnt work for some reason)
+Add score rating system (green -> red) for each site (think this already exists but doesnt work for some reason) ( **FIXED** )
 
 bugs:
 
