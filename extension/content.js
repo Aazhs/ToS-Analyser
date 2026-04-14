@@ -149,6 +149,15 @@ let currentSession = {
   analysisInFlight: false
 };
 
+let overlayState = {
+  left: null,
+  top: null,
+  minimized: false,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
+  lastPayload: null
+};
+
 function canRunOnPage() {
   return SUPPORTED_PROTOCOLS.has(window.location.protocol);
 }
@@ -519,6 +528,80 @@ function extractPolicyText() {
   return extractFallbackPageText();
 }
 
+function overlayScoreFromRating(rating) {
+  if (!rating) return null;
+  const map = { A: 92, B: 80, C: 62, D: 36, E: 18 };
+  return map[String(rating).toUpperCase()] ?? null;
+}
+
+function overlayRiskMeta({ rating, riskSummary, error }) {
+  if (error) {
+    return { tone: "danger", label: "Attention", score: 28 };
+  }
+
+  const score = overlayScoreFromRating(rating);
+  const summary = cleanText(riskSummary || "").toLowerCase();
+
+  if (score !== null) {
+    if (score >= 78) return { tone: "safe", label: "Safe", score };
+    if (score >= 50) return { tone: "warning", label: "Warning", score };
+    return { tone: "danger", label: "Danger", score };
+  }
+
+  if (/(high|risky|extensive|broad|profiling|tracking|share|ads|cross-service)/.test(summary)) {
+    return { tone: "warning", label: "Warning", score: 55 };
+  }
+
+  return { tone: "neutral", label: "Review", score: 48 };
+}
+
+function overlaySourceLabel(source) {
+  if (!source) return "";
+  return source === "AI" ? "Gemini AI" : source;
+}
+
+function overlayIconSvg(tone) {
+  if (tone === "safe") {
+    return "<svg viewBox='0 0 24 24' fill='none' aria-hidden='true'><path d='M20 6 9 17l-5-5' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+  }
+
+  if (tone === "danger") {
+    return "<svg viewBox='0 0 24 24' fill='none' aria-hidden='true'><path d='M12 8v4m0 4h.01M10.3 3.8 2.9 17a2 2 0 0 0 1.74 3h14.72A2 2 0 0 0 21.1 17L13.7 3.8a2 2 0 0 0-3.4 0Z' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+  }
+
+  if (tone === "warning") {
+    return "<svg viewBox='0 0 24 24' fill='none' aria-hidden='true'><path d='M12 9v4m0 4h.01M12 3l9 16H3L12 3Z' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+  }
+
+  return "<svg viewBox='0 0 24 24' fill='none' aria-hidden='true'><path d='M12 3 5 6v6c0 4.4 2.7 8.44 7 10 4.3-1.56 7-5.6 7-10V6l-7-3Z' stroke='currentColor' stroke-width='1.7' stroke-linejoin='round'/><path d='m9.5 12 1.7 1.7 3.3-3.4' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+}
+
+function defaultOverlayPosition() {
+  const width = Math.min(380, Math.max(280, window.innerWidth - 24));
+  return {
+    left: Math.max(12, window.innerWidth - width - 18),
+    top: 18
+  };
+}
+
+function clampOverlayPosition() {
+  if (!overlayRoot) return;
+
+  const rect = overlayRoot.getBoundingClientRect();
+  const maxLeft = Math.max(12, window.innerWidth - rect.width - 12);
+  const maxTop = Math.max(12, window.innerHeight - rect.height - 12);
+
+  overlayState.left = Math.min(Math.max(overlayState.left ?? 12, 12), maxLeft);
+  overlayState.top = Math.min(Math.max(overlayState.top ?? 12, 12), maxTop);
+}
+
+function applyOverlayPosition() {
+  if (!overlayRoot) return;
+  clampOverlayPosition();
+  overlayRoot.style.left = `${overlayState.left}px`;
+  overlayRoot.style.top = `${overlayState.top}px`;
+}
+
 function ensureOverlay() {
   if (overlayRoot && document.body.contains(overlayRoot)) {
     return overlayRoot;
@@ -526,94 +609,174 @@ function ensureOverlay() {
 
   overlayRoot = document.createElement("div");
   overlayRoot.id = "ai-tos-overlay";
-  overlayRoot.style.position = "fixed";
-  overlayRoot.style.right = "16px";
-  overlayRoot.style.bottom = "16px";
-  overlayRoot.style.width = "360px";
-  overlayRoot.style.maxHeight = "70vh";
-  overlayRoot.style.overflow = "auto";
-  overlayRoot.style.background = "#ffffff";
-  overlayRoot.style.border = "1px solid #d1d5db";
-  overlayRoot.style.borderRadius = "14px";
-  overlayRoot.style.boxShadow = "0 14px 40px rgba(0,0,0,0.2)";
-  overlayRoot.style.zIndex = "2147483647";
-  overlayRoot.style.fontFamily = "ui-sans-serif, system-ui, -apple-system";
-  overlayRoot.style.color = "#111827";
+  overlayRoot.className = "tos-overlay-root";
+
+  if (overlayState.left === null || overlayState.top === null) {
+    const initialPosition = defaultOverlayPosition();
+    overlayState.left = initialPosition.left;
+    overlayState.top = initialPosition.top;
+  }
 
   document.body.appendChild(overlayRoot);
+  applyOverlayPosition();
   return overlayRoot;
+}
+
+function closeOverlay() {
+  stopOverlayDrag();
+  overlayState.minimized = false;
+  if (overlayRoot?.isConnected) {
+    overlayRoot.remove();
+  }
+  overlayRoot = null;
+}
+
+function stopOverlayDrag() {
+  document.removeEventListener("mousemove", onOverlayDrag);
+  document.removeEventListener("mouseup", stopOverlayDrag);
+}
+
+function onOverlayDrag(event) {
+  overlayState.left = event.clientX - overlayState.dragOffsetX;
+  overlayState.top = event.clientY - overlayState.dragOffsetY;
+  applyOverlayPosition();
+}
+
+function startOverlayDrag(event) {
+  if (!(event.target instanceof Element)) return;
+  if (event.target.closest("button")) return;
+
+  const root = ensureOverlay();
+  const rect = root.getBoundingClientRect();
+  overlayState.dragOffsetX = event.clientX - rect.left;
+  overlayState.dragOffsetY = event.clientY - rect.top;
+
+  document.addEventListener("mousemove", onOverlayDrag);
+  document.addEventListener("mouseup", stopOverlayDrag);
+}
+
+function syncOverlayStateClasses(root) {
+  root.classList.toggle("is-minimized", overlayState.minimized);
 }
 
 function handleAcknowledge() {
   currentSession.acknowledged = true;
   unblockActionButtons();
-
-  const root = ensureOverlay();
-  const unlockNote = root.querySelector("#ai-tos-unlock-note");
-  const ackBtn = root.querySelector("#ai-tos-ack");
-
-  if (ackBtn) {
-    ackBtn.remove();
-  }
-
-  if (unlockNote) {
-    unlockNote.textContent = "Signup/continue controls are unlocked.";
-    unlockNote.style.color = "#065f46";
-  }
-
-  const header = root.querySelector("#ai-tos-header-title");
-  if (header) {
-    header.textContent = `${header.textContent} (Reviewed)`;
+  if (overlayState.lastPayload) {
+    renderOverlay({
+      ...overlayState.lastPayload,
+      title: `${overlayState.lastPayload.title.replace(/ \(Reviewed\)$/, "")} (Reviewed)`,
+      requireAck: false,
+      riskSummary:
+        overlayState.lastPayload.riskSummary || "Review complete. Signup and continue controls are now unlocked."
+    });
   }
 }
 
 function renderOverlay({ title, subtitle, source, rating, riskSummary, keyPoints, error, requireAck }) {
   const root = ensureOverlay();
-
-  const keyPointsHtml = (keyPoints || []).map((point) => `<li style='margin-bottom:6px;'>${escapeHtml(point)}</li>`).join("");
-
   const showAck = Boolean(requireAck && !currentSession.acknowledged);
-  const closeButton = showAck
-    ? ""
-    : "<button id='ai-tos-close' style='border:none;background:#f3f4f6;border-radius:8px;padding:4px 8px;cursor:pointer;'>Close</button>";
+  const riskMeta = overlayRiskMeta({ rating, riskSummary, error });
+  const score = riskMeta.score ?? 48;
+  const toneClass = `risk-${riskMeta.tone}`;
+  const keyPointsHtml = (keyPoints || [])
+    .map((point) => `<li class="tos-overlay-point">${escapeHtml(point)}</li>`)
+    .join("");
+
+  overlayState.lastPayload = { title, subtitle, source, rating, riskSummary, keyPoints, error, requireAck };
+
+  if (showAck) {
+    overlayState.minimized = false;
+  }
+
+  root.className = `tos-overlay-root ${toneClass}`;
+  syncOverlayStateClasses(root);
 
   root.innerHTML = `
-    <div style="padding: 12px 14px 4px 14px; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center;">
-      <div>
-        <div id="ai-tos-header-title" style="font-weight: 700; font-size: 14px;">${escapeHtml(title)}</div>
-        <div style="font-size: 12px; color: #4b5563; margin-top: 2px;">${escapeHtml(subtitle)}</div>
+    <div class="tos-overlay-card">
+      <div class="tos-overlay-header" id="ai-tos-drag-handle">
+        <div class="tos-overlay-brand">
+          <div class="tos-overlay-icon">${overlayIconSvg(riskMeta.tone)}</div>
+          <div class="tos-overlay-heading">
+            <div class="tos-overlay-eyebrow">AI ToS Analyzer</div>
+            <div id="ai-tos-header-title" class="tos-overlay-title">${escapeHtml(title)}</div>
+            <div class="tos-overlay-subtitle">${escapeHtml(subtitle)}</div>
+          </div>
+        </div>
+        <div class="tos-overlay-actions">
+          <button id="ai-tos-minimize" class="tos-icon-button" type="button" aria-label="Minimize analyzer">
+            <span class="tos-icon-line"></span>
+          </button>
+          ${
+            showAck
+              ? ""
+              : "<button id='ai-tos-close' class='tos-icon-button' type='button' aria-label='Close analyzer'><span class='tos-close-icon'></span></button>"
+          }
+        </div>
       </div>
-      ${closeButton}
-    </div>
-    <div style="padding: 12px 14px 14px 14px; font-size: 13px; line-height: 1.45;">
-      ${error ? `<div style='color:#b91c1c; margin-bottom:10px;'>${escapeHtml(error)}</div>` : ""}
-      ${source ? `<div style='margin-bottom: 8px;'><strong>Source:</strong> ${escapeHtml(source)}${rating ? ` (Rating: ${escapeHtml(rating)})` : ""}</div>` : ""}
-      ${riskSummary ? `<div style='margin-bottom: 10px;'><strong>Risk summary:</strong> ${escapeHtml(riskSummary)}</div>` : ""}
-      ${keyPoints?.length ? `<div><strong>Key points</strong><ul style='margin: 8px 0 0 18px;'>${keyPointsHtml}</ul></div>` : ""}
-      ${
-        showAck
-          ? "<div id='ai-tos-unlock-note' style='margin-top:10px;color:#7c2d12;'>Continue/signup controls are paused until reviewed.</div>"
-          : ""
-      }
-      ${
-        showAck
-          ? "<button id='ai-tos-ack' style='margin-top:12px;border:0;border-radius:10px;padding:9px 12px;background:#111827;color:#fff;cursor:pointer;font-weight:600;'>I understand, continue</button>"
-          : ""
-      }
+
+      <div class="tos-overlay-body">
+        <div class="tos-overlay-topline">
+          <span class="tos-overlay-badge">${escapeHtml(riskMeta.label)}</span>
+          ${rating ? `<span class="tos-overlay-chip">Rating ${escapeHtml(rating)}</span>` : ""}
+          ${source ? `<span class="tos-overlay-chip">${escapeHtml(overlaySourceLabel(source))}</span>` : ""}
+          <span class="tos-overlay-score">Risk score ${escapeHtml(score)}/100</span>
+        </div>
+
+        ${
+          error
+            ? `<div class="tos-overlay-note is-error">${escapeHtml(error)}</div>`
+            : `<div class="tos-overlay-summary">${escapeHtml(riskSummary || "Summary is being prepared.")}</div>`
+        }
+
+        ${
+          keyPoints?.length
+            ? `<div class="tos-overlay-section"><div class="tos-overlay-section-title">Key points</div><ul class="tos-overlay-points">${keyPointsHtml}</ul></div>`
+            : ""
+        }
+
+        <div id="ai-tos-unlock-note" class="tos-overlay-note ${showAck ? "is-warning" : "is-success"}">
+          ${
+            showAck
+              ? "Signup and continue controls are paused until you review this summary."
+              : "You can drag, minimize, or dismiss this card while browsing."
+          }
+        </div>
+
+        <div class="tos-overlay-footer">
+          ${
+            showAck
+              ? "<button id='ai-tos-ack' class='tos-button is-primary' type='button'>I understand, continue</button>"
+              : "<button id='ai-tos-close-secondary' class='tos-button is-secondary' type='button'>Dismiss</button>"
+          }
+          <button id="ai-tos-minimize-secondary" class="tos-button is-ghost" type="button">
+            ${overlayState.minimized ? "Expand" : "Minimize"}
+          </button>
+        </div>
+      </div>
     </div>
   `;
 
-  const closeBtn = root.querySelector("#ai-tos-close");
-  if (closeBtn) {
-    closeBtn.addEventListener("click", () => {
-      root.remove();
-    });
-  }
+  applyOverlayPosition();
 
-  const ackBtn = root.querySelector("#ai-tos-ack");
-  if (ackBtn) {
-    ackBtn.addEventListener("click", handleAcknowledge);
-  }
+  const dragHandle = root.querySelector("#ai-tos-drag-handle");
+  dragHandle?.addEventListener("mousedown", startOverlayDrag);
+
+  const minimize = () => {
+    overlayState.minimized = !overlayState.minimized;
+    syncOverlayStateClasses(root);
+    applyOverlayPosition();
+    const secondaryLabel = root.querySelector("#ai-tos-minimize-secondary");
+    if (secondaryLabel) {
+      secondaryLabel.textContent = overlayState.minimized ? "Expand" : "Minimize";
+    }
+  };
+
+  root.querySelector("#ai-tos-minimize")?.addEventListener("click", minimize);
+  root.querySelector("#ai-tos-minimize-secondary")?.addEventListener("click", minimize);
+  root.querySelector("#ai-tos-close")?.addEventListener("click", closeOverlay);
+  root.querySelector("#ai-tos-close-secondary")?.addEventListener("click", closeOverlay);
+  root.querySelector("#ai-tos-ack")?.addEventListener("click", handleAcknowledge);
 }
 
 function submitForAnalysis(extractedText, requireAck) {
@@ -875,8 +1038,10 @@ chrome.runtime.onMessage.addListener((message) => {
 if (canRunOnPage()) {
   guardBlockedInteractions();
   wireAutoDetection();
+  window.addEventListener("resize", applyOverlayPosition);
 }
 
 window.addEventListener("beforeunload", () => {
+  stopOverlayDrag();
   unblockActionButtons();
 });
