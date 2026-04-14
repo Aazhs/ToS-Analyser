@@ -109,13 +109,20 @@ npm run dev
 
 Dashboard runs at `http://localhost:5173`.
 
-### 3) Chrome Extension
+### 3) Chrome Extension (Detailed Setup)
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select the `extension/` folder
-5. Open a website/login page and test
+1. Open Chrome and go to `chrome://extensions`.
+2. Enable **Developer mode** (top-right toggle).
+3. Click **Load unpacked**.
+4. Select the `extension/` folder from this repo.
+5. Confirm **AI ToS Analyzer** appears and is enabled.
+6. Click the extension card's **Reload** button after any local code change.
+7. Click the puzzle icon (Extensions) in Chrome.
+8. Pin **AI ToS Analyzer** to keep the icon visible in toolbar.
+9. On `chrome://extensions`, open **Service worker** / **Inspect views** for debug logs.
+10. Open any `http/https` site and click extension icon for a manual scan.
+11. Open a signup/login page to verify auto overlay + temporary auth-action blocking.
+12. If it does not react, hard refresh tab (`Ctrl+Shift+R` or `Cmd+Shift+R`) and reload extension.
 
 ## Local Startup (Windows - PowerShell)
 
@@ -144,11 +151,14 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-### 3) Chrome Extension
+### 3) Chrome Extension (Detailed Setup)
 
-Same as Linux/macOS:
-
-- `chrome://extensions` -> Developer mode -> Load unpacked -> select `extension/`
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and choose `extension/`.
+4. Pin **AI ToS Analyzer** from Chrome extensions menu.
+5. Use **Reload** on the extension card after code changes.
+6. Use **Service worker / Inspect views** for debugging logs.
 
 ## API Endpoints
 
