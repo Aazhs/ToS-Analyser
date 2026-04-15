@@ -31,6 +31,24 @@ const OAUTH_HOST_HINTS = [
   "twitter.com/i/oauth2",
   "x.com/i/oauth2"
 ];
+const POLICY_LINK_HINTS = [
+  "terms",
+  "terms of service",
+  "terms and conditions",
+  "terms of use",
+  "tos",
+  "privacy",
+  "privacy policy",
+  "privacy notice",
+  "privacy statement",
+  "legal",
+  "user agreement",
+  "cookie policy",
+  "conditions"
+];
+const POLICY_LINK_STOPWORDS = ["login", "signin", "sign in", "signup", "sign up", "register", "account", "support", "help"];
+const POLICY_FETCH_TIMEOUT_MS = 10000;
+const MIN_POLICY_TEXT_LENGTH = 280;
 
 const COMMON_SITE_PRESETS = {
   "google.com": {
@@ -146,8 +164,10 @@ let currentSession = {
   acknowledged: false,
   domain: "",
   lastFingerprint: "",
-  analysisInFlight: false
+  analysisInFlight: false,
+  scanInProgress: false
 };
+const policyTextCache = new Map();
 
 let overlayState = {
   left: null,
@@ -169,6 +189,12 @@ function normalizeDomain(hostname) {
 
 function currentPageKey() {
   return `${normalizeDomain(window.location.hostname)}${window.location.pathname}`;
+}
+
+function isRelatedHost(a, b) {
+  const hostA = normalizeDomain(a);
+  const hostB = normalizeDomain(b);
+  return hostA === hostB || hostA.endsWith(`.${hostB}`) || hostB.endsWith(`.${hostA}`);
 }
 
 function cleanText(raw) {
@@ -517,6 +543,177 @@ function extractFallbackPageText() {
   }
 
   return bodyText.slice(0, MAX_TEXT_LENGTH);
+}
+
+function countPolicyKeywords(text) {
+  const lower = cleanText(text).toLowerCase();
+  return POLICY_LINK_HINTS.reduce((acc, keyword) => acc + (lower.includes(keyword) ? 1 : 0), 0);
+}
+
+function isProbablyPolicyText(text) {
+  const cleaned = cleanText(text);
+  if (!cleaned) return false;
+  if (cleaned.length < 140) return false;
+  return countPolicyKeywords(cleaned) > 0;
+}
+
+function scorePolicyLink(anchor, targetUrl) {
+  const text = cleanText(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label") || "").toLowerCase();
+  const href = cleanText(targetUrl).toLowerCase();
+  const parentFooterBoost = anchor.closest("footer") ? 30 : 0;
+  const hintScore = POLICY_LINK_HINTS.reduce((acc, hint) => acc + (text.includes(hint) ? 18 : 0), 0);
+  const hrefHint = POLICY_LINK_HINTS.reduce((acc, hint) => acc + (href.includes(hint.replaceAll(" ", "-")) || href.includes(hint) ? 10 : 0), 0);
+  const stopPenalty = POLICY_LINK_STOPWORDS.reduce((acc, hint) => acc + (text.includes(hint) ? 20 : 0), 0);
+  const privacyPathBoost = /privacy|terms|legal|policy/.test(href) ? 22 : 0;
+  const shortTextBoost = text.length > 0 && text.length < 40 ? 4 : 0;
+  return parentFooterBoost + hintScore + hrefHint + privacyPathBoost + shortTextBoost - stopPenalty;
+}
+
+function findLikelyPolicyLinks() {
+  const anchors = [...document.querySelectorAll("a[href]")];
+  const seen = new Set();
+  const candidates = [];
+
+  anchors.forEach((anchor) => {
+    let resolved;
+    try {
+      resolved = new URL(anchor.getAttribute("href"), window.location.href);
+    } catch {
+      return;
+    }
+
+    if (!["http:", "https:"].includes(resolved.protocol)) return;
+    if (resolved.hash && resolved.pathname === window.location.pathname) return;
+
+    const sameSite = isRelatedHost(resolved.hostname, window.location.hostname);
+    if (!sameSite) return;
+
+    const normalizedUrl = `${resolved.origin}${resolved.pathname}${resolved.search}`;
+    if (seen.has(normalizedUrl)) return;
+    seen.add(normalizedUrl);
+
+    const score = scorePolicyLink(anchor, normalizedUrl);
+    if (score < 18) return;
+
+    candidates.push({ url: normalizedUrl, score });
+  });
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, 5);
+}
+
+function extractPolicyTextFromDocument(doc) {
+  const preferredSelectors = [
+    "main",
+    "article",
+    "[role='main']",
+    "#content",
+    "#main",
+    ".terms",
+    ".privacy",
+    ".policy",
+    ".legal",
+    "[class*='terms']",
+    "[class*='privacy']",
+    "[class*='policy']",
+    "[id*='terms']",
+    "[id*='privacy']",
+    "[id*='policy']"
+  ];
+
+  for (const selector of preferredSelectors) {
+    const el = doc.querySelector(selector);
+    if (!el) continue;
+    const text = cleanText(el.textContent || "");
+    if (isProbablyPolicyText(text) && text.length >= MIN_POLICY_TEXT_LENGTH) {
+      return text.slice(0, MAX_TEXT_LENGTH);
+    }
+  }
+
+  const bodyText = cleanText(doc.body?.textContent || "");
+  if (bodyText.length >= 120) {
+    return bodyText.slice(0, MAX_TEXT_LENGTH);
+  }
+  return "";
+}
+
+async function fetchPolicyTextFromUrl(url) {
+  if (policyTextCache.has(url)) {
+    return policyTextCache.get(url);
+  }
+
+  const workerFetchResult = await new Promise((resolve) => {
+    const timeoutId = window.setTimeout(() => resolve(null), POLICY_FETCH_TIMEOUT_MS + 800);
+    chrome.runtime.sendMessage({ type: "FETCH_POLICY_TEXT", url }, (response) => {
+      window.clearTimeout(timeoutId);
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      resolve(response || null);
+    });
+  });
+
+  if (!workerFetchResult?.ok) {
+    return null;
+  }
+
+  const contentType = String(workerFetchResult.contentType || "").toLowerCase();
+  if (!contentType.includes("text/html")) {
+    return null;
+  }
+
+  const html = String(workerFetchResult.text || "");
+  if (!html) return null;
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  doc.querySelectorAll("script, style, noscript, svg, canvas, iframe").forEach((node) => node.remove());
+
+  const extracted = extractPolicyTextFromDocument(doc);
+  if (!extracted) return null;
+
+  const result = { text: extracted, url: String(workerFetchResult.url || url) };
+  policyTextCache.set(url, result);
+  return result;
+}
+
+async function resolvePolicyTextWithFooterFallback(baseText) {
+  const currentPageText = cleanText(baseText || "");
+  let bestText = currentPageText;
+  let bestUrl = window.location.href;
+  const baseKeywordCount = countPolicyKeywords(currentPageText);
+  const candidateLinks = findLikelyPolicyLinks();
+  const hasStrongPolicyLink = candidateLinks.some((item) => item.score >= 42);
+  const shouldSeekPolicyLink =
+    candidateLinks.length > 0 && (!isProbablyPolicyText(currentPageText) || currentPageText.length < 1200 || baseKeywordCount < 3 || hasStrongPolicyLink);
+
+  if (!shouldSeekPolicyLink) {
+    return { text: bestText, sourceUrl: bestUrl, fromPolicyLink: false };
+  }
+
+  for (const candidate of candidateLinks) {
+    const fetched = await fetchPolicyTextFromUrl(candidate.url);
+    if (!fetched?.text) continue;
+
+    const fetchedText = cleanText(fetched.text);
+    const fetchedKeywords = countPolicyKeywords(fetchedText);
+    const isBetter = fetchedText.length > bestText.length * 1.1 || fetchedKeywords > baseKeywordCount;
+    if (!isBetter) continue;
+
+    bestText = fetchedText.slice(0, MAX_TEXT_LENGTH);
+    bestUrl = fetched.url;
+
+    if (fetchedText.length > 2600 && fetchedKeywords >= 2) {
+      break;
+    }
+  }
+
+  return {
+    text: bestText,
+    sourceUrl: bestUrl,
+    fromPolicyLink: bestUrl !== window.location.href
+  };
 }
 
 function extractPolicyText() {
@@ -1050,7 +1247,7 @@ function renderOverlay({ title, subtitle, source, rating, riskSummary, keyPoints
   root.querySelector("#ai-tos-ack")?.addEventListener("click", handleAcknowledge);
 }
 
-function submitForAnalysis(extractedText, requireAck) {
+function submitForAnalysis(extractedText, requireAck, sourceUrl = window.location.href) {
   currentSession.analysisInFlight = true;
 
   chrome.runtime.sendMessage(
@@ -1058,7 +1255,7 @@ function submitForAnalysis(extractedText, requireAck) {
       type: "ANALYZE_TOS",
       payload: {
         domain: window.location.hostname,
-        url: window.location.href,
+        url: sourceUrl,
         text: extractedText
       }
     },
@@ -1076,73 +1273,85 @@ function submitForAnalysis(extractedText, requireAck) {
   );
 }
 
-function runScan(trigger = "manual") {
+async function runScan(trigger = "manual") {
   if (!canRunOnPage()) return;
+  if (currentSession.scanInProgress) return;
   if (trigger === "auto" && currentSession.analysisInFlight) return;
 
-  const domain = normalizeDomain(window.location.hostname);
-  const authContext = detectAuthContext();
+  currentSession.scanInProgress = true;
+  try {
+    const domain = normalizeDomain(window.location.hostname);
+    const authContext = detectAuthContext();
 
-  if (trigger === "auto" && !authContext.isAuthPage) {
-    return;
-  }
-
-  if (authContext.isAuthPage) {
-    currentSession.requireAck = true;
-    currentSession.acknowledged = false;
-    currentSession.domain = domain;
-
-    if (authContext.actions.length > 0) {
-      blockActionButtons(authContext.actions);
+    if (trigger === "auto" && !authContext.isAuthPage) {
+      return;
     }
-  } else {
-    currentSession.requireAck = false;
-    currentSession.acknowledged = false;
-    currentSession.domain = domain;
-    unblockActionButtons();
-  }
 
-  const preset = findPreset(domain);
-  if (preset) {
+    if (authContext.isAuthPage) {
+      currentSession.requireAck = true;
+      currentSession.acknowledged = false;
+      currentSession.domain = domain;
+
+      if (authContext.actions.length > 0) {
+        blockActionButtons(authContext.actions);
+      }
+    } else {
+      currentSession.requireAck = false;
+      currentSession.acknowledged = false;
+      currentSession.domain = domain;
+      unblockActionButtons();
+    }
+
+    const preset = findPreset(domain);
+    if (preset) {
+      renderOverlay({
+        title: authContext.isAuthPage ? "Signup/Login ToS Summary" : "Website ToS Summary",
+        subtitle: domain,
+        source: preset.source,
+        rating: preset.rating,
+        riskSummary: preset.risk_summary,
+        keyPoints: preset.key_points,
+        requireAck: authContext.isAuthPage
+      });
+      return;
+    }
+
+    const extractedFromPage = extractPolicyText();
+    const resolvedPolicy = await resolvePolicyTextWithFooterFallback(extractedFromPage);
+    const extractedText = resolvedPolicy.text;
+    const analysisUrl = resolvedPolicy.sourceUrl;
+
+    if (!extractedText) {
+      renderOverlay({
+        title: "ToS Analyzer",
+        subtitle: domain,
+        error: "Could not find policy text on this page. Try a signup/login page with visible terms.",
+        requireAck: authContext.isAuthPage
+      });
+      return;
+    }
+
+    const fingerprint = `${domain}:${analysisUrl}:${extractedText.slice(0, 700)}`;
+    if (trigger === "auto" && fingerprint === currentSession.lastFingerprint) {
+      return;
+    }
+    currentSession.lastFingerprint = fingerprint;
+
     renderOverlay({
-      title: authContext.isAuthPage ? "Signup/Login ToS Summary" : "Website ToS Summary",
+      title: authContext.isAuthPage ? "Checking terms before signup..." : "Analyzing policy text...",
       subtitle: domain,
-      source: preset.source,
-      rating: preset.rating,
-      riskSummary: preset.risk_summary,
-      keyPoints: preset.key_points,
+      riskSummary: authContext.isAuthPage
+        ? "Signup/continue controls are paused until this summary is reviewed."
+        : resolvedPolicy.fromPolicyLink
+          ? "Found a Terms/Privacy link (usually footer) and analyzing that policy page."
+          : "Detected policy text, requesting summary.",
       requireAck: authContext.isAuthPage
     });
-    return;
+
+    submitForAnalysis(extractedText, authContext.isAuthPage, analysisUrl);
+  } finally {
+    currentSession.scanInProgress = false;
   }
-
-  const extractedText = extractPolicyText();
-  if (!extractedText) {
-    renderOverlay({
-      title: "ToS Analyzer",
-      subtitle: domain,
-      error: "Could not find policy text on this page. Try a signup/login page with visible terms.",
-      requireAck: authContext.isAuthPage
-    });
-    return;
-  }
-
-  const fingerprint = `${domain}:${extractedText.slice(0, 700)}`;
-  if (trigger === "auto" && fingerprint === currentSession.lastFingerprint) {
-    return;
-  }
-  currentSession.lastFingerprint = fingerprint;
-
-  renderOverlay({
-    title: authContext.isAuthPage ? "Checking terms before signup..." : "Analyzing policy text...",
-    subtitle: domain,
-    riskSummary: authContext.isAuthPage
-      ? "Signup/continue controls are paused until this summary is reviewed."
-      : "Detected policy text, requesting summary.",
-    requireAck: authContext.isAuthPage
-  });
-
-  submitForAnalysis(extractedText, authContext.isAuthPage);
 }
 
 function maybeAutoScan() {

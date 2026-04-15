@@ -27,37 +27,73 @@ async function analyzePayload(payload) {
   return data;
 }
 
+async function fetchPolicyPage(url) {
+  const response = await fetch(url, {
+    method: "GET",
+    redirect: "follow",
+    credentials: "include"
+  });
+
+  const contentType = response.headers.get("content-type") || "";
+  const rawText = await response.text();
+  const text = rawText.slice(0, 400000);
+
+  if (!response.ok) {
+    throw new Error(`Policy page fetch failed (${response.status})`);
+  }
+
+  return {
+    ok: true,
+    url: response.url || url,
+    contentType,
+    text
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "ANALYZE_TOS") {
-    return false;
+  if (message?.type === "ANALYZE_TOS") {
+    const tabId = sender?.tab?.id;
+    if (typeof tabId !== "number") {
+      sendResponse({ ok: false, error: "No active tab context" });
+      return false;
+    }
+
+    analyzePayload(message.payload)
+      .then((result) => {
+        chrome.tabs.sendMessage(tabId, {
+          type: "ANALYZE_RESULT",
+          result
+        });
+        sendResponse({ ok: true });
+      })
+      .catch((error) => {
+        chrome.tabs.sendMessage(tabId, {
+          type: "ANALYZE_ERROR",
+          error: error?.message || "Unknown error"
+        });
+        sendResponse({ ok: false, error: error?.message || "Unknown error" });
+      });
+
+    return true;
   }
 
-  const tabId = sender?.tab?.id;
-  if (typeof tabId !== "number") {
-    sendResponse({ ok: false, error: "No active tab context" });
-    return false;
+  if (message?.type === "FETCH_POLICY_TEXT") {
+    const url = String(message?.url || "").trim();
+    if (!url) {
+      sendResponse({ ok: false, error: "Missing policy URL" });
+      return false;
+    }
+
+    fetchPolicyPage(url)
+      .then((payload) => sendResponse(payload))
+      .catch((error) => {
+        sendResponse({ ok: false, error: error?.message || "Policy fetch failed" });
+      });
+
+    return true;
   }
 
-  analyzePayload(message.payload)
-    .then((result) => {
-      chrome.tabs.sendMessage(tabId, {
-        type: "ANALYZE_RESULT",
-        result
-      });
-      sendResponse({ ok: true });
-    })
-    .catch((error) => {
-      chrome.tabs.sendMessage(tabId, {
-        type: "ANALYZE_ERROR",
-        error: error?.message || "Unknown error"
-      });
-      sendResponse({ ok: false, error: error?.message || "Unknown error" });
-    })
-    .finally(() => {
-      // no-op: keep hook for future tab-level state
-    });
-
-  return true;
+  return false;
 });
 
 chrome.action.onClicked.addListener((tab) => {
