@@ -1,4 +1,5 @@
 import json
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -6,10 +7,33 @@ from typing import Any
 
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "tos_analyzer.db"
+logger = logging.getLogger(__name__)
+
+
+def _resolve_db_path(db_path: str | None = None) -> Path:
+    target = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
+
+    if not target.is_absolute():
+        target = (Path.cwd() / target).resolve()
+
+    parent = target.parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        return target
+    except OSError as exc:
+        fallback = DEFAULT_DB_PATH.resolve()
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        logger.warning(
+            "Could not prepare DATABASE_PATH '%s' (%s). Falling back to '%s'.",
+            target,
+            exc,
+            fallback,
+        )
+        return fallback
 
 
 def get_connection(db_path: str | None = None) -> sqlite3.Connection:
-    target = Path(db_path) if db_path else DEFAULT_DB_PATH
+    target = _resolve_db_path(db_path)
     conn = sqlite3.connect(target)
     conn.row_factory = sqlite3.Row
     return conn
