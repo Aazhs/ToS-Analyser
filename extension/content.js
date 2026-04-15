@@ -168,7 +168,8 @@ let currentSession = {
   domain: "",
   lastFingerprint: "",
   analysisInFlight: false,
-  scanInProgress: false
+  scanInProgress: false,
+  weakTextRetries: 0
 };
 const policyTextCache = new Map();
 
@@ -182,7 +183,22 @@ let overlayState = {
 };
 
 function canRunOnPage() {
-  return SUPPORTED_PROTOCOLS.has(window.location.protocol);
+  return SUPPORTED_PROTOCOLS.has(window.location.protocol) && !isGoogleSearchResultsPage();
+}
+
+function isGoogleSearchResultsPage() {
+  const host = normalizeDomain(window.location.hostname);
+  if (!host.startsWith("google.")) return false;
+
+  const path = String(window.location.pathname || "").toLowerCase();
+  if (path === "/search" || path.startsWith("/search/")) return true;
+
+  if (path === "/") {
+    const q = new URLSearchParams(window.location.search || "").get("q");
+    return Boolean((q || "").trim());
+  }
+
+  return false;
 }
 
 function normalizeDomain(hostname) {
@@ -202,6 +218,41 @@ function isRelatedHost(a, b) {
 
 function cleanText(raw) {
   return String(raw || "").replace(/\s+/g, " ").trim();
+}
+
+function looksLikeMissingPolicyTextSummary(text) {
+  const value = cleanText(text).toLowerCase();
+  if (!value) return false;
+  return (
+    value.includes("terms of service text was not provided") ||
+    value.includes("terms text was not provided") ||
+    value.includes("policy text was not provided") ||
+    (value.includes("not provided") && value.includes("risk summary")) ||
+    (value.includes("cannot be generated") && value.includes("at this time"))
+  );
+}
+
+function scheduleWeakTextRetry() {
+  if (currentSession.weakTextRetries >= 2) return false;
+
+  currentSession.weakTextRetries += 1;
+  currentSession.analysisInFlight = false;
+  currentSession.lastFingerprint = "";
+  autoTriggeredPageKey = "";
+
+  renderOverlay({
+    title: "ToS Analyzer",
+    subtitle: currentSession.domain || normalizeDomain(window.location.hostname),
+    riskSummary: "Policy text looked incomplete. Retrying extraction from Terms/Privacy links...",
+    requireAck: currentSession.requireAck,
+    keyPoints: []
+  });
+
+  window.setTimeout(() => {
+    runScan("auto");
+  }, 1200);
+
+  return true;
 }
 
 function includesAny(text, hints) {
@@ -662,19 +713,29 @@ async function fetchPolicyTextFromUrl(url) {
   }
 
   const contentType = String(workerFetchResult.contentType || "").toLowerCase();
-  if (!contentType.includes("text/html")) {
-    return null;
-  }
-
   const html = String(workerFetchResult.text || "");
   if (!html) return null;
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-  doc.querySelectorAll("script, style, noscript, svg, canvas, iframe").forEach((node) => node.remove());
+  const htmlLike =
+    contentType.includes("text/html") ||
+    contentType.includes("application/xhtml+xml") ||
+    /^\s*</.test(html);
 
-  const extracted = extractPolicyTextFromDocument(doc);
-  if (!extracted) return null;
+  let extracted = "";
+  if (htmlLike) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    doc.querySelectorAll("script, style, noscript, svg, canvas, iframe").forEach((node) => node.remove());
+    extracted = extractPolicyTextFromDocument(doc);
+  }
+
+  if (!extracted) {
+    const cleanedRaw = cleanText(html).slice(0, MAX_TEXT_LENGTH);
+    if (cleanedRaw.length < MIN_POLICY_TEXT_LENGTH && !isProbablyPolicyText(cleanedRaw)) {
+      return null;
+    }
+    extracted = cleanedRaw;
+  }
 
   const result = { text: extracted, url: String(workerFetchResult.url || url) };
   policyTextCache.set(url, result);
@@ -685,11 +746,11 @@ async function resolvePolicyTextWithFooterFallback(baseText) {
   const currentPageText = cleanText(baseText || "");
   let bestText = currentPageText;
   let bestUrl = window.location.href;
-  const baseKeywordCount = countPolicyKeywords(currentPageText);
+  let bestKeywordCount = countPolicyKeywords(currentPageText);
   const candidateLinks = findLikelyPolicyLinks();
   const hasStrongPolicyLink = candidateLinks.some((item) => item.score >= 42);
   const shouldSeekPolicyLink =
-    candidateLinks.length > 0 && (!isProbablyPolicyText(currentPageText) || currentPageText.length < 1200 || baseKeywordCount < 3 || hasStrongPolicyLink);
+    candidateLinks.length > 0 && (!isProbablyPolicyText(currentPageText) || currentPageText.length < 1200 || bestKeywordCount < 3 || hasStrongPolicyLink);
 
   if (!shouldSeekPolicyLink) {
     return { text: bestText, sourceUrl: bestUrl, fromPolicyLink: false };
@@ -701,11 +762,16 @@ async function resolvePolicyTextWithFooterFallback(baseText) {
 
     const fetchedText = cleanText(fetched.text);
     const fetchedKeywords = countPolicyKeywords(fetchedText);
-    const isBetter = fetchedText.length > bestText.length * 1.1 || fetchedKeywords > baseKeywordCount;
+    const fetchedLooksPolicyLike = isProbablyPolicyText(fetchedText);
+    const bestLooksPolicyLike = isProbablyPolicyText(bestText);
+    const isClearlyBetter = fetchedText.length > bestText.length * 1.1 || fetchedKeywords > bestKeywordCount;
+    const isPolicyUpgrade = fetchedLooksPolicyLike && (!bestLooksPolicyLike || fetchedKeywords >= bestKeywordCount);
+    const isBetter = isClearlyBetter || isPolicyUpgrade;
     if (!isBetter) continue;
 
     bestText = fetchedText.slice(0, MAX_TEXT_LENGTH);
     bestUrl = fetched.url;
+    bestKeywordCount = countPolicyKeywords(bestText);
 
     if (fetchedText.length > 2600 && fetchedKeywords >= 2) {
       break;
@@ -1480,6 +1546,7 @@ function wireAutoDetection() {
   const routeChanged = () => {
     autoTriggeredPageKey = "";
     currentSession.lastFingerprint = "";
+    currentSession.weakTextRetries = 0;
     window.setTimeout(maybeAutoScan, 250);
   };
 
@@ -1510,6 +1577,11 @@ chrome.runtime.onMessage.addListener((message) => {
     currentSession.analysisInFlight = false;
 
     const result = message.result || {};
+    if (looksLikeMissingPolicyTextSummary(result.risk_summary || "") && scheduleWeakTextRetry()) {
+      return;
+    }
+
+    currentSession.weakTextRetries = 0;
     renderOverlay({
       title: currentSession.requireAck ? "Signup/Login ToS Summary" : "ToS Summary",
       subtitle: result.domain || currentSession.domain || window.location.hostname,
@@ -1524,6 +1596,11 @@ chrome.runtime.onMessage.addListener((message) => {
 
   if (message?.type === "ANALYZE_ERROR") {
     currentSession.analysisInFlight = false;
+
+    const errorText = String(message.error || "");
+    if (errorText.includes("Provide extracted text for AI analysis") && scheduleWeakTextRetry()) {
+      return;
+    }
 
     renderOverlay({
       title: "ToS Analyzer",
