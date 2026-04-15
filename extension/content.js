@@ -76,9 +76,12 @@ const COMMON_SITE_PRESETS = {
     rating: "D",
     risk_summary: "Instagram data may be shared within Meta systems and used for ad personalization.",
     key_points: [
-      "Engagement and content signals can inform ad targeting.",
-      "Cross-service sharing with Meta ecosystem is common.",
-      "Account privacy controls exist but require active tuning."
+      "[Good] The service will not allow third parties to access your personal information without a legal basis",
+      "[Bad] Usernames can be rejected for any reason",
+      "[Bad] This service uses third-party cookies for statistics",
+      "[Neutral] The service informs users that its privacy policy does not apply to third party websites",
+      "[Neutral] You agree to defend, indemnify, and hold the service harmless in case of a claim related to your use of the service",
+      "[Neutral] The service provider makes no warranty regarding uninterrupted, timely, secure or error-free service"
     ]
   },
   "x.com": {
