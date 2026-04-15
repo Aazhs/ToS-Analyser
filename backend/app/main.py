@@ -41,6 +41,19 @@ POLICY_HINTS = (
     "data",
 )
 
+PLACEHOLDER_HINTS = (
+    "loading",
+    "loading...",
+    "please enable javascript",
+    "enable javascript to continue",
+    "access denied",
+    "request blocked",
+    "cloudflare",
+    "just a moment",
+    "no content provided for analysis",
+    "key points cannot be identified",
+)
+
 
 def _clean_text(raw: str) -> str:
     return " ".join(str(raw or "").split()).strip()
@@ -51,9 +64,37 @@ def _policy_hint_count(text: str) -> int:
     return sum(1 for hint in POLICY_HINTS if hint in lower)
 
 
+def _looks_like_placeholder_text(text: str) -> bool:
+    lower = _clean_text(text).lower()
+    if not lower:
+        return True
+    if any(hint in lower for hint in PLACEHOLDER_HINTS):
+        return True
+
+    words = [w for w in re.split(r"\s+", lower) if w]
+    if 0 < len(words) <= 14:
+        placeholder_words = {
+            "loading",
+            "please",
+            "wait",
+            "continue",
+            "javascript",
+            "verify",
+            "human",
+            "moment",
+            "processing",
+        }
+        if all(word in placeholder_words for word in words):
+            return True
+
+    return False
+
+
 def _looks_like_meaningful_policy_text(text: str) -> bool:
     cleaned = _clean_text(text)
     if not cleaned:
+        return False
+    if _looks_like_placeholder_text(cleaned):
         return False
     if len(cleaned) >= 1800:
         return True

@@ -65,7 +65,7 @@ export function Navbar({ sidebarOpen, onSidebarToggle, isDark, onThemeToggle }) 
             aria-label="Open extension install instructions on GitHub"
           >
             <span className="header-link-dot" aria-hidden="true" />
-            Install Browswe Extension
+            Install Browser Extension
             <ExternalLink size={14} />
           </motion.a>
 

@@ -631,9 +631,80 @@ function countPolicyKeywords(text) {
   return POLICY_LINK_HINTS.reduce((acc, keyword) => acc + (lower.includes(keyword) ? 1 : 0), 0);
 }
 
+function looksLikePlaceholderPolicyText(text) {
+  const cleaned = cleanText(text);
+  if (!cleaned) return true;
+
+  const lower = cleaned.toLowerCase();
+  const placeholderPhrases = [
+    "loading",
+    "loading...",
+    "please enable javascript",
+    "enable javascript to continue",
+    "access denied",
+    "request blocked",
+    "cloudflare",
+    "just a moment",
+    "no content provided for analysis",
+    "key points cannot be identified"
+  ];
+
+  if (placeholderPhrases.some((phrase) => lower.includes(phrase))) {
+    return true;
+  }
+
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (words.length > 0 && words.length <= 14) {
+    return words.every((word) =>
+      [
+        "loading",
+        "please",
+        "wait",
+        "continue",
+        "javascript",
+        "verify",
+        "human",
+        "moment",
+        "processing"
+      ].includes(word)
+    );
+  }
+
+  return false;
+}
+
+function policyQualityScore(text) {
+  const cleaned = cleanText(text);
+  if (!cleaned) return 0;
+  if (looksLikePlaceholderPolicyText(cleaned)) return 0;
+
+  const lower = cleaned.toLowerCase();
+  const keywordScore = countPolicyKeywords(cleaned) * 22;
+  const lengthScore = Math.min(80, Math.floor(cleaned.length / 120));
+  const clauseSignals = [
+    "collect",
+    "retain",
+    "share",
+    "process",
+    "consent",
+    "rights",
+    "delete",
+    "privacy",
+    "terms",
+    "policy"
+  ];
+  const clauseScore = clauseSignals.reduce((acc, token) => acc + (lower.includes(token) ? 8 : 0), 0);
+
+  const antiSignals = ["enable javascript", "captcha", "access denied", "cloudflare", "request blocked"];
+  const antiPenalty = antiSignals.reduce((acc, token) => acc + (lower.includes(token) ? 24 : 0), 0);
+
+  return keywordScore + lengthScore + clauseScore - antiPenalty;
+}
+
 function isProbablyPolicyText(text) {
   const cleaned = cleanText(text);
   if (!cleaned) return false;
+  if (looksLikePlaceholderPolicyText(cleaned)) return false;
   if (cleaned.length < 140) return false;
   return countPolicyKeywords(cleaned) > 0;
 }
@@ -758,10 +829,17 @@ async function fetchPolicyTextFromUrl(url) {
 
   if (!extracted) {
     const cleanedRaw = cleanText(html).slice(0, MAX_TEXT_LENGTH);
+    if (looksLikePlaceholderPolicyText(cleanedRaw)) {
+      return null;
+    }
     if (cleanedRaw.length < MIN_POLICY_TEXT_LENGTH && !isProbablyPolicyText(cleanedRaw)) {
       return null;
     }
     extracted = cleanedRaw;
+  }
+
+  if (looksLikePlaceholderPolicyText(extracted) || policyQualityScore(extracted) < 30) {
+    return null;
   }
 
   const result = { text: extracted, url: String(workerFetchResult.url || url) };
@@ -774,6 +852,7 @@ async function resolvePolicyTextWithFooterFallback(baseText) {
   let bestText = currentPageText;
   let bestUrl = window.location.href;
   let bestKeywordCount = countPolicyKeywords(currentPageText);
+  let bestQuality = policyQualityScore(currentPageText);
   const candidateLinks = findLikelyPolicyLinks();
   const hasStrongPolicyLink = candidateLinks.some((item) => item.score >= 42);
   const shouldSeekPolicyLink =
@@ -788,17 +867,26 @@ async function resolvePolicyTextWithFooterFallback(baseText) {
     if (!fetched?.text) continue;
 
     const fetchedText = cleanText(fetched.text);
+    const fetchedQuality = policyQualityScore(fetchedText);
     const fetchedKeywords = countPolicyKeywords(fetchedText);
     const fetchedLooksPolicyLike = isProbablyPolicyText(fetchedText);
     const bestLooksPolicyLike = isProbablyPolicyText(bestText);
-    const isClearlyBetter = fetchedText.length > bestText.length * 1.1 || fetchedKeywords > bestKeywordCount;
-    const isPolicyUpgrade = fetchedLooksPolicyLike && (!bestLooksPolicyLike || fetchedKeywords >= bestKeywordCount);
+    const stronglyHintedPolicyLink = candidate.score >= 42;
+    const isClearlyBetter =
+      fetchedText.length > bestText.length * 1.1 ||
+      fetchedKeywords > bestKeywordCount ||
+      fetchedQuality > bestQuality + 20;
+    const isPolicyUpgrade =
+      fetchedLooksPolicyLike &&
+      (!bestLooksPolicyLike || fetchedKeywords >= bestKeywordCount || fetchedQuality >= bestQuality + 8);
+    const trustStrongPolicyLink = stronglyHintedPolicyLink && fetchedLooksPolicyLike && fetchedQuality >= Math.max(60, bestQuality - 6);
     const isBetter = isClearlyBetter || isPolicyUpgrade;
-    if (!isBetter) continue;
+    if (!isBetter && !trustStrongPolicyLink) continue;
 
     bestText = fetchedText.slice(0, MAX_TEXT_LENGTH);
     bestUrl = fetched.url;
     bestKeywordCount = countPolicyKeywords(bestText);
+    bestQuality = policyQualityScore(bestText);
 
     if (fetchedText.length > 2600 && fetchedKeywords >= 2) {
       break;
@@ -816,12 +904,16 @@ function extractPolicyText() {
   const popupElement = findBestPopupElement();
   if (popupElement) {
     const text = cleanText(popupElement.innerText || "");
-    if (text.length > 30) {
+    if (text.length > 30 && !looksLikePlaceholderPolicyText(text)) {
       return text.slice(0, MAX_TEXT_LENGTH);
     }
   }
 
-  return extractFallbackPageText();
+  const fallback = extractFallbackPageText();
+  if (looksLikePlaceholderPolicyText(fallback)) {
+    return "";
+  }
+  return fallback;
 }
 
 function parseColorToRgb(input) {
@@ -1417,7 +1509,7 @@ async function runScan(trigger = "manual") {
     const extractedText = resolvedPolicy.text;
     const analysisUrl = resolvedPolicy.sourceUrl;
 
-    if (!extractedText) {
+    if (!extractedText || looksLikePlaceholderPolicyText(extractedText) || policyQualityScore(extractedText) < 30) {
       renderOverlay({
         title: "ToS Analyzer",
         subtitle: domain,
