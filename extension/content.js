@@ -31,106 +31,154 @@ const OAUTH_HOST_HINTS = [
   "twitter.com/i/oauth2",
   "x.com/i/oauth2"
 ];
+const POLICY_LINK_HINTS = [
+  "terms",
+  "terms of service",
+  "terms and conditions",
+  "terms of use",
+  "tos",
+  "privacy",
+  "privacy policy",
+  "privacy notice",
+  "privacy statement",
+  "legal",
+  "user agreement",
+  "cookie policy",
+  "conditions"
+];
+const POLICY_LINK_STOPWORDS = ["login", "signin", "sign in", "signup", "sign up", "register", "account", "support", "help"];
+const POLICY_FETCH_TIMEOUT_MS = 10000;
+const MIN_POLICY_TEXT_LENGTH = 280;
 
 const COMMON_SITE_PRESETS = {
   "google.com": {
     source: "Preset",
-    rating: "C",
-    risk_summary: "Google policies are broad; account activity can be used to personalize ads and services.",
+    rating: "D",
+    risk_summary: "Google can combine account, device, activity, and partner-site signals to personalize content and ads, but provides unusually strong self-service controls for review, export, and deletion.",
     key_points: [
-      "Data from many Google services can be combined.",
-      "Personalization settings exist but defaults are often data-forward.",
-      "Policy updates can be rolled out with notice in account channels."
+      "Google collects data when signed in and signed out, including device identifiers, activity logs, and location signals.",
+      "Data can be used to personalize services and ads across Google products and partner sites/apps using Google ad or analytics tools.",
+      "Google says it does not show personalized ads based on sensitive categories, and not based on Gmail, Drive, or Photos content.",
+      "Sharing can occur with your consent, with admins of managed/workspace domains, with processors, and for legal or security requests.",
+      "Controls include Privacy Checkup, My Activity, Ad Center, auto-delete timers, and Google Takeout export/deletion workflows.",
+      "Retention varies by data type; some data is deleted or anonymized on schedule, while other data persists for legal, fraud, or security reasons."
     ]
   },
   "facebook.com": {
     source: "Preset",
     rating: "D",
-    risk_summary: "Meta policies often allow extensive profiling and cross-service data use.",
+    risk_summary: "Facebook policy allows broad collection and profiling across Meta products and partner contexts, with user controls available but requiring active configuration.",
     key_points: [
-      "Behavior and interaction data may drive ad targeting.",
-      "Settings exist, but many controls require manual opt-out.",
-      "Policy language can be broad for future feature use."
+      "Meta states it may collect activity, device, and partner-provided data, including some data about non-users in certain cases.",
+      "Information may be used to personalize feeds, recommendations, and ads across Meta products and devices.",
+      "Meta states it does not sell personal information and does not share direct identifiers with advertisers without permission.",
+      "Data can be shared with integrated partners, service providers, other Meta companies, and for legal/safety responses.",
+      "You can use settings for ad preferences, off-Meta activity controls, account download/port/delete, and privacy checkups.",
+      "Retention is case-by-case and may be extended for legal obligations, safety investigations, and abuse prevention."
     ]
   },
   "instagram.com": {
     source: "Preset",
     rating: "D",
-    risk_summary: "Instagram data may be shared within Meta systems and used for ad personalization.",
+    risk_summary: "Instagram follows Meta Privacy Policy patterns: broad activity and device collection, cross-product data use, and ad personalization with controls that must be actively managed.",
     key_points: [
-      "Engagement and content signals can inform ad targeting.",
-      "Cross-service sharing with Meta ecosystem is common.",
-      "Account privacy controls exist but require active tuning."
+      "Meta policy states data can be collected from your activity, device/browser, contacts, and partners/vendors.",
+      "Data may be used to personalize Instagram features, recommendations, and advertising on and off Meta properties.",
+      "Meta companies may share data internally for safety, personalization, and product integration.",
+      "Sharing can occur with advertisers/partners in aggregated or governed forms, with integrated apps, and for legal requests.",
+      "Controls exist for ad preferences, data access/download/delete requests, account center privacy settings, and connected apps.",
+      "Policy includes possible international transfers and variable retention windows depending on feature, legal, and safety needs."
     ]
   },
   "x.com": {
     source: "Preset",
-    rating: "C",
-    risk_summary: "X/Twitter terms can change over time and include broad platform rights over user content operations.",
+    rating: "D",
+    risk_summary: "X is explicitly a public platform with broad data use for personalization and ads, broad content licensing rights, and strong enforcement/disclaimer language in terms.",
     key_points: [
-      "Platform may process content for safety, recommendation, and ads.",
-      "Certain dispute and enforcement terms can limit recourse speed.",
-      "Policy changes may be posted without direct per-user negotiation."
+      "Public posts and profile elements are generally viewable and searchable broadly, including outside X.",
+      "Policy describes collection of content/activity, device and log data, location signals, and partner-provided advertising data.",
+      "X uses data for recommendations, ad targeting and ad measurement on and off platform, with some controls in settings.",
+      "Retention examples include cookies up to 13 months, ad-partner data up to 12 months, and some support communications up to 18 months.",
+      "Terms grant X a broad worldwide license to user content and mention analysis/training use for machine learning and AI purposes.",
+      "Terms allow account suspension/termination for violations, legal risk, inactivity, or commercial viability; liability is heavily limited."
     ]
   },
   "twitter.com": {
     source: "Preset",
-    rating: "C",
-    risk_summary: "X/Twitter terms can change over time and include broad platform rights over user content operations.",
+    rating: "D",
+    risk_summary: "Twitter domain now routes to X policy framework, which includes public-by-default content visibility, broad ad/personalization data use, and expansive enforcement rights.",
     key_points: [
-      "Platform may process content for safety, recommendation, and ads.",
-      "Certain dispute and enforcement terms can limit recourse speed.",
-      "Policy changes may be posted without direct per-user negotiation."
+      "Public content and profile metadata are broadly accessible unless account visibility settings restrict them.",
+      "Collected data includes usage signals, interactions, device/log information, and partner/ad-tech identifiers.",
+      "X states it may combine partner data with account data for relevance, measurement, and anti-abuse uses.",
+      "Users can access/download account data and queue deletion via deactivation workflows, subject to retention/legal exceptions.",
+      "Terms include broad content license rights and permission for service improvement uses including AI/ML-related processing.",
+      "Service is provided as-is with significant warranty and liability limitations and jurisdiction-dependent dispute terms."
     ]
   },
   "amazon.com": {
     source: "Preset",
     rating: "C",
-    risk_summary: "Amazon policies allow extensive transactional and behavioral data processing across services.",
+    risk_summary: "Amazon account, commerce, and device ecosystem data can be extensively used for recommendations, fraud prevention, and ads, with controls available but distributed across account settings.",
     key_points: [
-      "Purchase and browsing data may be used for recommendations and ads.",
-      "Account and marketplace terms can differ by product/service line.",
-      "Recurring services can auto-renew unless canceled in settings."
+      "Amazon typically uses purchase history, browsing interactions, and device/app signals to personalize shopping and content experiences.",
+      "Data can be used for recommendation systems, security/fraud detection, customer support, and measurement of services and ads.",
+      "Information may be shared with affiliates, service providers, sellers/fulfillment partners, and for legal or transactional reasons.",
+      "Interest-based advertising and cookie preferences can generally be adjusted via ad preferences and account privacy controls.",
+      "Data access, download, correction, and deletion request paths exist, but practical scope may vary by region and legal obligations.",
+      "Order, tax, and anti-fraud records may be retained beyond account-level deletions where legally or operationally required."
     ]
   },
   "microsoft.com": {
     source: "Preset",
-    rating: "B",
-    risk_summary: "Microsoft generally provides clearer controls, but telemetry and service integration remain substantial.",
+    rating: "C",
+    risk_summary: "Microsoft policies are detailed and control-rich, but still permit broad collection, cross-product combination, and personalization/advertising uses depending on product and settings.",
     key_points: [
-      "Telemetry and diagnostics may be enabled by default in products.",
-      "Enterprise and consumer terms differ; verify your account type.",
-      "Privacy dashboard and export/delete tools are available."
+      "Microsoft collects data directly, from product interactions, from devices, and from third parties/affiliates.",
+      "Data is used to provide, secure, improve, and personalize products, plus advertising and marketing where applicable.",
+      "Policies describe combining data across Microsoft contexts to enable more consistent cross-product experiences.",
+      "Data can be shared with affiliates, vendors, legal authorities, and safety/security response channels.",
+      "User controls include the privacy dashboard, ad personalization opt-outs, communication preferences, and product-specific settings.",
+      "If your account is managed by employer or school, administrators may access account data, diagnostics, files, and settings."
     ]
   },
   "apple.com": {
     source: "Preset",
     rating: "B",
-    risk_summary: "Apple emphasizes privacy but still processes account, payment, and device usage data.",
+    risk_summary: "Apple emphasizes privacy-by-design and on-device controls, but still processes account, transaction, and usage data for service operation, personalization, and legal/security obligations.",
     key_points: [
-      "Data is used for service delivery, fraud prevention, and personalization.",
-      "Some personalization controls can be disabled per feature.",
-      "Subscription billing and renewals require active management."
+      "Apple’s policy states personal data is collected directly, from product usage, and from other sources where permitted.",
+      "Product-level privacy notices and settings are integrated in features that request sensitive access.",
+      "Data may be used for service provision, account security, fraud prevention, communications, and product improvement.",
+      "Sharing may occur with service providers, affiliates, legal authorities, and in limited business transfer situations.",
+      "Users generally have rights and tools for access, correction, deletion, portability, and account/privacy preference management.",
+      "Cross-border transfers are addressed with safeguards and region-specific rights disclosures in policy materials."
     ]
   },
   "linkedin.com": {
     source: "Preset",
     rating: "C",
-    risk_summary: "LinkedIn may use profile and activity data for recommendations, outreach, and ads.",
+    risk_summary: "LinkedIn is professional-network centric but uses extensive profile, behavioral, and inferred data for recommendations, recruiting surfaces, and ad targeting on and off platform.",
     key_points: [
-      "Professional and engagement data can affect ranking/visibility.",
-      "Visibility controls exist but defaults may expose more profile info.",
-      "Recruiting and ad products can involve extended data processing."
+      "Profile and professional data can be widely visible depending on settings, including discoverability outside LinkedIn.",
+      "LinkedIn uses service activity, cookies/tags, partner data, and inferred traits to personalize feed, jobs, and ads.",
+      "Advertising systems may use on- and off-site interaction data; opt-outs and ad settings are available for members and guests.",
+      "LinkedIn can share data with affiliates (including Microsoft), service providers, enterprise customers, and legal authorities.",
+      "Enterprise and recruiter products may expose limited profile fields to paying customers unless specific opt-outs are used.",
+      "Data is often retained while account is open, with some post-closure retention for legal, fraud, and security reasons."
     ]
   },
   "github.com": {
     source: "Preset",
     rating: "B",
-    risk_summary: "GitHub terms are usually developer-friendly, but hosted/public content has broad platform handling rights.",
+    risk_summary: "GitHub gives strong clarity around developer rights and repository controls, but public content is broadly accessible and terms include substantial disclaimers and broad service-operation licenses.",
     key_points: [
-      "Public repositories are inherently visible and indexable.",
-      "Security scanning and abuse detection process repository metadata.",
-      "Private repo controls exist, but org policies may override defaults."
+      "You retain ownership of your content, but grant GitHub licenses needed to host, index, display, and operate the service.",
+      "Public repositories are visible and forkable by design; private repositories are treated as confidential with limited access cases.",
+      "GitHub documents that private-repo access may occur for security, support, legal obligations, and integrity/abuse workflows.",
+      "Organization-provided accounts can be controlled by the organization, which may access usage and repository-related data.",
+      "Privacy statement covers sharing with affiliates, subprocessors, legal authorities, and selected partners/service providers.",
+      "On account cancellation, GitHub states broad profile/repo data deletion targets, but legal/security retention and forked/public copies may persist."
     ]
   }
 };
@@ -146,11 +194,38 @@ let currentSession = {
   acknowledged: false,
   domain: "",
   lastFingerprint: "",
-  analysisInFlight: false
+  analysisInFlight: false,
+  scanInProgress: false,
+  weakTextRetries: 0
+};
+const policyTextCache = new Map();
+
+let overlayState = {
+  left: null,
+  top: null,
+  minimized: false,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
+  lastPayload: null
 };
 
 function canRunOnPage() {
-  return SUPPORTED_PROTOCOLS.has(window.location.protocol);
+  return SUPPORTED_PROTOCOLS.has(window.location.protocol) && !isGoogleSearchResultsPage();
+}
+
+function isGoogleSearchResultsPage() {
+  const host = normalizeDomain(window.location.hostname);
+  if (!host.startsWith("google.")) return false;
+
+  const path = String(window.location.pathname || "").toLowerCase();
+  if (path === "/search" || path.startsWith("/search/")) return true;
+
+  if (path === "/") {
+    const q = new URLSearchParams(window.location.search || "").get("q");
+    return Boolean((q || "").trim());
+  }
+
+  return false;
 }
 
 function normalizeDomain(hostname) {
@@ -162,8 +237,49 @@ function currentPageKey() {
   return `${normalizeDomain(window.location.hostname)}${window.location.pathname}`;
 }
 
+function isRelatedHost(a, b) {
+  const hostA = normalizeDomain(a);
+  const hostB = normalizeDomain(b);
+  return hostA === hostB || hostA.endsWith(`.${hostB}`) || hostB.endsWith(`.${hostA}`);
+}
+
 function cleanText(raw) {
   return String(raw || "").replace(/\s+/g, " ").trim();
+}
+
+function looksLikeMissingPolicyTextSummary(text) {
+  const value = cleanText(text).toLowerCase();
+  if (!value) return false;
+  return (
+    value.includes("terms of service text was not provided") ||
+    value.includes("terms text was not provided") ||
+    value.includes("policy text was not provided") ||
+    (value.includes("not provided") && value.includes("risk summary")) ||
+    (value.includes("cannot be generated") && value.includes("at this time"))
+  );
+}
+
+function scheduleWeakTextRetry() {
+  if (currentSession.weakTextRetries >= 2) return false;
+
+  currentSession.weakTextRetries += 1;
+  currentSession.analysisInFlight = false;
+  currentSession.lastFingerprint = "";
+  autoTriggeredPageKey = "";
+
+  renderOverlay({
+    title: "ToS Analyzer",
+    subtitle: currentSession.domain || normalizeDomain(window.location.hostname),
+    riskSummary: "Policy text looked incomplete. Retrying extraction from Terms/Privacy links...",
+    requireAck: currentSession.requireAck,
+    keyPoints: []
+  });
+
+  window.setTimeout(() => {
+    runScan("auto");
+  }, 1200);
+
+  return true;
 }
 
 function includesAny(text, hints) {
@@ -510,6 +626,192 @@ function extractFallbackPageText() {
   return bodyText.slice(0, MAX_TEXT_LENGTH);
 }
 
+function countPolicyKeywords(text) {
+  const lower = cleanText(text).toLowerCase();
+  return POLICY_LINK_HINTS.reduce((acc, keyword) => acc + (lower.includes(keyword) ? 1 : 0), 0);
+}
+
+function isProbablyPolicyText(text) {
+  const cleaned = cleanText(text);
+  if (!cleaned) return false;
+  if (cleaned.length < 140) return false;
+  return countPolicyKeywords(cleaned) > 0;
+}
+
+function scorePolicyLink(anchor, targetUrl) {
+  const text = cleanText(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label") || "").toLowerCase();
+  const href = cleanText(targetUrl).toLowerCase();
+  const parentFooterBoost = anchor.closest("footer") ? 30 : 0;
+  const hintScore = POLICY_LINK_HINTS.reduce((acc, hint) => acc + (text.includes(hint) ? 18 : 0), 0);
+  const hrefHint = POLICY_LINK_HINTS.reduce((acc, hint) => acc + (href.includes(hint.replaceAll(" ", "-")) || href.includes(hint) ? 10 : 0), 0);
+  const stopPenalty = POLICY_LINK_STOPWORDS.reduce((acc, hint) => acc + (text.includes(hint) ? 20 : 0), 0);
+  const privacyPathBoost = /privacy|terms|legal|policy/.test(href) ? 22 : 0;
+  const shortTextBoost = text.length > 0 && text.length < 40 ? 4 : 0;
+  return parentFooterBoost + hintScore + hrefHint + privacyPathBoost + shortTextBoost - stopPenalty;
+}
+
+function findLikelyPolicyLinks() {
+  const anchors = [...document.querySelectorAll("a[href]")];
+  const seen = new Set();
+  const candidates = [];
+
+  anchors.forEach((anchor) => {
+    let resolved;
+    try {
+      resolved = new URL(anchor.getAttribute("href"), window.location.href);
+    } catch {
+      return;
+    }
+
+    if (!["http:", "https:"].includes(resolved.protocol)) return;
+    if (resolved.hash && resolved.pathname === window.location.pathname) return;
+
+    const sameSite = isRelatedHost(resolved.hostname, window.location.hostname);
+    if (!sameSite) return;
+
+    const normalizedUrl = `${resolved.origin}${resolved.pathname}${resolved.search}`;
+    if (seen.has(normalizedUrl)) return;
+    seen.add(normalizedUrl);
+
+    const score = scorePolicyLink(anchor, normalizedUrl);
+    if (score < 18) return;
+
+    candidates.push({ url: normalizedUrl, score });
+  });
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, 5);
+}
+
+function extractPolicyTextFromDocument(doc) {
+  const preferredSelectors = [
+    "main",
+    "article",
+    "[role='main']",
+    "#content",
+    "#main",
+    ".terms",
+    ".privacy",
+    ".policy",
+    ".legal",
+    "[class*='terms']",
+    "[class*='privacy']",
+    "[class*='policy']",
+    "[id*='terms']",
+    "[id*='privacy']",
+    "[id*='policy']"
+  ];
+
+  for (const selector of preferredSelectors) {
+    const el = doc.querySelector(selector);
+    if (!el) continue;
+    const text = cleanText(el.textContent || "");
+    if (isProbablyPolicyText(text) && text.length >= MIN_POLICY_TEXT_LENGTH) {
+      return text.slice(0, MAX_TEXT_LENGTH);
+    }
+  }
+
+  const bodyText = cleanText(doc.body?.textContent || "");
+  if (bodyText.length >= 120) {
+    return bodyText.slice(0, MAX_TEXT_LENGTH);
+  }
+  return "";
+}
+
+async function fetchPolicyTextFromUrl(url) {
+  if (policyTextCache.has(url)) {
+    return policyTextCache.get(url);
+  }
+
+  const workerFetchResult = await new Promise((resolve) => {
+    const timeoutId = window.setTimeout(() => resolve(null), POLICY_FETCH_TIMEOUT_MS + 800);
+    chrome.runtime.sendMessage({ type: "FETCH_POLICY_TEXT", url }, (response) => {
+      window.clearTimeout(timeoutId);
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      resolve(response || null);
+    });
+  });
+
+  if (!workerFetchResult?.ok) {
+    return null;
+  }
+
+  const contentType = String(workerFetchResult.contentType || "").toLowerCase();
+  const html = String(workerFetchResult.text || "");
+  if (!html) return null;
+
+  const htmlLike =
+    contentType.includes("text/html") ||
+    contentType.includes("application/xhtml+xml") ||
+    /^\s*</.test(html);
+
+  let extracted = "";
+  if (htmlLike) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    doc.querySelectorAll("script, style, noscript, svg, canvas, iframe").forEach((node) => node.remove());
+    extracted = extractPolicyTextFromDocument(doc);
+  }
+
+  if (!extracted) {
+    const cleanedRaw = cleanText(html).slice(0, MAX_TEXT_LENGTH);
+    if (cleanedRaw.length < MIN_POLICY_TEXT_LENGTH && !isProbablyPolicyText(cleanedRaw)) {
+      return null;
+    }
+    extracted = cleanedRaw;
+  }
+
+  const result = { text: extracted, url: String(workerFetchResult.url || url) };
+  policyTextCache.set(url, result);
+  return result;
+}
+
+async function resolvePolicyTextWithFooterFallback(baseText) {
+  const currentPageText = cleanText(baseText || "");
+  let bestText = currentPageText;
+  let bestUrl = window.location.href;
+  let bestKeywordCount = countPolicyKeywords(currentPageText);
+  const candidateLinks = findLikelyPolicyLinks();
+  const hasStrongPolicyLink = candidateLinks.some((item) => item.score >= 42);
+  const shouldSeekPolicyLink =
+    candidateLinks.length > 0 && (!isProbablyPolicyText(currentPageText) || currentPageText.length < 1200 || bestKeywordCount < 3 || hasStrongPolicyLink);
+
+  if (!shouldSeekPolicyLink) {
+    return { text: bestText, sourceUrl: bestUrl, fromPolicyLink: false };
+  }
+
+  for (const candidate of candidateLinks) {
+    const fetched = await fetchPolicyTextFromUrl(candidate.url);
+    if (!fetched?.text) continue;
+
+    const fetchedText = cleanText(fetched.text);
+    const fetchedKeywords = countPolicyKeywords(fetchedText);
+    const fetchedLooksPolicyLike = isProbablyPolicyText(fetchedText);
+    const bestLooksPolicyLike = isProbablyPolicyText(bestText);
+    const isClearlyBetter = fetchedText.length > bestText.length * 1.1 || fetchedKeywords > bestKeywordCount;
+    const isPolicyUpgrade = fetchedLooksPolicyLike && (!bestLooksPolicyLike || fetchedKeywords >= bestKeywordCount);
+    const isBetter = isClearlyBetter || isPolicyUpgrade;
+    if (!isBetter) continue;
+
+    bestText = fetchedText.slice(0, MAX_TEXT_LENGTH);
+    bestUrl = fetched.url;
+    bestKeywordCount = countPolicyKeywords(bestText);
+
+    if (fetchedText.length > 2600 && fetchedKeywords >= 2) {
+      break;
+    }
+  }
+
+  return {
+    text: bestText,
+    sourceUrl: bestUrl,
+    fromPolicyLink: bestUrl !== window.location.href
+  };
+}
+
 function extractPolicyText() {
   const popupElement = findBestPopupElement();
   if (popupElement) {
@@ -522,6 +824,347 @@ function extractPolicyText() {
   return extractFallbackPageText();
 }
 
+function parseColorToRgb(input) {
+  if (!input) return null;
+  const value = String(input).trim().toLowerCase();
+  if (!value || value === "transparent") return null;
+
+  const rgbMatch = value.match(/rgba?\(([^)]+)\)/);
+  if (rgbMatch) {
+    const parts = rgbMatch[1].split(",").map((part) => Number(part.trim()));
+    if (parts.length >= 3 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && Number.isFinite(parts[2])) {
+      return {
+        r: Math.max(0, Math.min(255, Math.round(parts[0]))),
+        g: Math.max(0, Math.min(255, Math.round(parts[1]))),
+        b: Math.max(0, Math.min(255, Math.round(parts[2]))),
+        a: parts.length >= 4 && Number.isFinite(parts[3]) ? Math.max(0, Math.min(1, parts[3])) : 1
+      };
+    }
+  }
+
+  const hex = value.replace("#", "");
+  if (hex.length === 3) {
+    return {
+      r: parseInt(`${hex[0]}${hex[0]}`, 16),
+      g: parseInt(`${hex[1]}${hex[1]}`, 16),
+      b: parseInt(`${hex[2]}${hex[2]}`, 16),
+      a: 1
+    };
+  }
+  if (hex.length === 6) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+      a: 1
+    };
+  }
+
+  return null;
+}
+
+function rgbToString(color, alpha = null) {
+  if (!color) return "";
+  if (alpha === null) {
+    return `rgb(${color.r}, ${color.g}, ${color.b})`;
+  }
+  return `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
+}
+
+function blendColors(base, mix, ratio) {
+  const t = Math.max(0, Math.min(1, ratio));
+  return {
+    r: Math.round(base.r + (mix.r - base.r) * t),
+    g: Math.round(base.g + (mix.g - base.g) * t),
+    b: Math.round(base.b + (mix.b - base.b) * t),
+    a: 1
+  };
+}
+
+function colorBrightness(color) {
+  if (!color) return 255;
+  return color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
+}
+
+function relativeLuminance(color) {
+  const convert = (value) => {
+    const v = value / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const r = convert(color.r);
+  const g = convert(color.g);
+  const b = convert(color.b);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(a, b) {
+  const l1 = relativeLuminance(a);
+  const l2 = relativeLuminance(b);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function ensureReadableText(baseText, background) {
+  const darkCandidate = { r: 17, g: 24, b: 39, a: 1 };
+  const lightCandidate = { r: 248, g: 250, b: 252, a: 1 };
+  const baseContrast = contrastRatio(baseText, background);
+  if (baseContrast >= 4.8) {
+    return baseText;
+  }
+
+  const darkContrast = contrastRatio(darkCandidate, background);
+  const lightContrast = contrastRatio(lightCandidate, background);
+  return darkContrast >= lightContrast ? darkCandidate : lightCandidate;
+}
+
+function colorSaturation(color) {
+  if (!color) return 0;
+  const max = Math.max(color.r, color.g, color.b);
+  const min = Math.min(color.r, color.g, color.b);
+  return max - min;
+}
+
+function pickSiteAccent() {
+  const candidates = [];
+  const selectors = [
+    "button",
+    "a[href]",
+    "[role='button']",
+    "input[type='submit']",
+    "input[type='button']",
+    "[class*='btn']",
+    "[class*='button']"
+  ];
+
+  selectors.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((element) => {
+      if (candidates.length > 42) return;
+      const style = window.getComputedStyle(element);
+      const bg = parseColorToRgb(style.backgroundColor);
+      const fg = parseColorToRgb(style.color);
+      const border = parseColorToRgb(style.borderColor);
+      [bg, fg, border].forEach((color) => {
+        if (color && color.a > 0.2) candidates.push(color);
+      });
+    });
+  });
+
+  const link = document.querySelector("a[href]");
+  if (link) {
+    const linkColor = parseColorToRgb(window.getComputedStyle(link).color);
+    if (linkColor) candidates.unshift(linkColor);
+  }
+
+  const vivid = candidates.find((color) => colorSaturation(color) > 35);
+  return vivid || candidates[0] || { r: 99, g: 102, b: 241, a: 1 };
+}
+
+function detectDominantSurfaceColor() {
+  const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+  const selectors = ["main", "[role='main']", "section", "article", "div", "body", "html"];
+  const scored = [];
+  let inspected = 0;
+
+  for (const selector of selectors) {
+    const nodes = document.querySelectorAll(selector);
+    for (const element of nodes) {
+      if (inspected > 180) break;
+      inspected += 1;
+
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 80 || rect.height < 80) continue;
+      if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
+
+      const style = window.getComputedStyle(element);
+      const color = parseColorToRgb(style.backgroundColor);
+      if (!color || color.a < 0.85) continue;
+
+      const visibleWidth = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);
+      const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+      if (visibleWidth <= 0 || visibleHeight <= 0) continue;
+
+      const areaRatio = (visibleWidth * visibleHeight) / viewportArea;
+      const weight = areaRatio * (1 + Math.max(0, 45 - colorSaturation(color)) / 120);
+      scored.push({ color, weight });
+    }
+    if (inspected > 180) break;
+  }
+
+  if (!scored.length) return null;
+  scored.sort((a, b) => b.weight - a.weight);
+  return scored[0].color;
+}
+
+function detectSiteTheme(tone) {
+  const htmlStyle = window.getComputedStyle(document.documentElement);
+  const bodyStyle = window.getComputedStyle(document.body || document.documentElement);
+
+  const htmlBg = parseColorToRgb(htmlStyle.backgroundColor);
+  const bodyBg = parseColorToRgb(bodyStyle.backgroundColor);
+  const sampledBg = detectDominantSurfaceColor();
+  const bg =
+    sampledBg ||
+    (bodyBg && bodyBg.a > 0.01 ? bodyBg : null) ||
+    htmlBg ||
+    { r: 248, g: 250, b: 252, a: 1 };
+
+  const bodyText = parseColorToRgb(bodyStyle.color) || parseColorToRgb(htmlStyle.color) || { r: 17, g: 24, b: 39, a: 1 };
+  const prefersDark =
+    typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const darkMode = colorBrightness(bg) < 145 || (prefersDark && colorBrightness(bg) < 175);
+
+  const siteAccent = pickSiteAccent();
+  const toneMap = {
+    safe: { r: 34, g: 197, b: 94, a: 1 },
+    warning: { r: 245, g: 158, b: 11, a: 1 },
+    danger: { r: 239, g: 68, b: 68, a: 1 },
+    neutral: siteAccent
+  };
+  const toneColor = toneMap[tone] || siteAccent;
+  const accent = blendColors(siteAccent, toneColor, tone === "neutral" ? 0 : 0.28);
+
+  const panel = darkMode ? blendColors(bg, { r: 255, g: 255, b: 255, a: 1 }, 0.06) : blendColors(bg, { r: 15, g: 23, b: 42, a: 1 }, 0.05);
+  const panelStrong = darkMode ? blendColors(bg, { r: 255, g: 255, b: 255, a: 1 }, 0.1) : blendColors(bg, { r: 15, g: 23, b: 42, a: 1 }, 0.1);
+  const textSeed = darkMode
+    ? blendColors(bodyText, { r: 255, g: 255, b: 255, a: 1 }, 0.18)
+    : blendColors(bodyText, { r: 0, g: 0, b: 0, a: 1 }, 0.04);
+  const text = ensureReadableText(textSeed, panelStrong);
+  const mutedSeed = darkMode ? blendColors(text, bg, 0.42) : blendColors(text, bg, 0.34);
+  const muted = ensureReadableText(mutedSeed, panelStrong);
+  const border = darkMode ? blendColors(panelStrong, { r: 255, g: 255, b: 255, a: 1 }, 0.22) : blendColors(panelStrong, { r: 0, g: 0, b: 0, a: 1 }, 0.16);
+
+  return {
+    accent,
+    accentSoft: rgbToString(accent, darkMode ? 0.22 : 0.18),
+    accentStrong: rgbToString(accent, darkMode ? 0.34 : 0.26),
+    panel: rgbToString(panel, darkMode ? 0.94 : 0.97),
+    panelStrong: rgbToString(panelStrong, darkMode ? 0.95 : 0.98),
+    text: rgbToString(text),
+    muted: rgbToString(muted),
+    border: rgbToString(border, darkMode ? 0.55 : 0.45),
+    buttonSurface: rgbToString(blendColors(panel, accent, darkMode ? 0.1 : 0.06), darkMode ? 0.8 : 0.85),
+    shadow: darkMode ? "0 20px 44px rgba(0,0,0,0.42)" : "0 18px 40px rgba(15,23,42,0.18)",
+    darkMode
+  };
+}
+
+function applyOverlayTheme(root, tone) {
+  const theme = detectSiteTheme(tone);
+  const chipSurface = theme.darkMode ? "rgba(255,255,255,0.12)" : "rgba(15,23,42,0.08)";
+  const panelSoft = theme.darkMode ? "rgba(15,23,42,0.64)" : "rgba(255,255,255,0.92)";
+  const borderSoft = theme.darkMode ? "rgba(148,163,184,0.16)" : "rgba(15,23,42,0.12)";
+  const warningTone = { r: 245, g: 158, b: 11, a: 1 };
+  const successTone = { r: 34, g: 197, b: 94, a: 1 };
+  const errorTone = { r: 239, g: 68, b: 68, a: 1 };
+  const noteWarningBg = theme.darkMode ? rgbToString(warningTone, 0.2) : rgbToString(warningTone, 0.16);
+  const noteWarningBorder = theme.darkMode ? rgbToString(warningTone, 0.34) : rgbToString(warningTone, 0.3);
+  const noteWarningText = theme.darkMode ? "rgb(254, 240, 200)" : "rgb(146, 64, 14)";
+  const noteSuccessBg = theme.darkMode ? rgbToString(successTone, 0.2) : rgbToString(successTone, 0.16);
+  const noteSuccessBorder = theme.darkMode ? rgbToString(successTone, 0.34) : rgbToString(successTone, 0.3);
+  const noteSuccessText = theme.darkMode ? "rgb(220, 252, 231)" : "rgb(22, 101, 52)";
+  const noteErrorBg = theme.darkMode ? rgbToString(errorTone, 0.2) : rgbToString(errorTone, 0.16);
+  const noteErrorBorder = theme.darkMode ? rgbToString(errorTone, 0.34) : rgbToString(errorTone, 0.3);
+  const noteErrorText = theme.darkMode ? "rgb(254, 226, 226)" : "rgb(153, 27, 27)";
+
+  root.style.setProperty("--tos-accent", rgbToString(theme.accent));
+  root.style.setProperty("--tos-accent-soft", theme.accentSoft);
+  root.style.setProperty("--tos-accent-strong", theme.accentStrong);
+  root.style.setProperty("--tos-site-panel", theme.panel);
+  root.style.setProperty("--tos-site-panel-strong", theme.panelStrong);
+  root.style.setProperty("--tos-site-panel-soft", panelSoft);
+  root.style.setProperty("--tos-site-text", theme.text);
+  root.style.setProperty("--tos-site-muted", theme.muted);
+  root.style.setProperty("--tos-site-border", theme.border);
+  root.style.setProperty("--tos-site-border-soft", borderSoft);
+  root.style.setProperty("--tos-site-button-surface", theme.buttonSurface);
+  root.style.setProperty("--tos-site-chip-surface", chipSurface);
+  root.style.setProperty("--tos-site-shadow", theme.shadow);
+  root.style.setProperty("--tos-note-warning-bg", noteWarningBg);
+  root.style.setProperty("--tos-note-warning-border", noteWarningBorder);
+  root.style.setProperty("--tos-note-warning-text", noteWarningText);
+  root.style.setProperty("--tos-note-success-bg", noteSuccessBg);
+  root.style.setProperty("--tos-note-success-border", noteSuccessBorder);
+  root.style.setProperty("--tos-note-success-text", noteSuccessText);
+  root.style.setProperty("--tos-note-error-bg", noteErrorBg);
+  root.style.setProperty("--tos-note-error-border", noteErrorBorder);
+  root.style.setProperty("--tos-note-error-text", noteErrorText);
+}
+
+function overlayScoreFromRating(rating) {
+  if (!rating) return null;
+  const map = { A: 92, B: 80, C: 62, D: 36, E: 18 };
+  return map[String(rating).toUpperCase()] ?? null;
+}
+
+function overlayRiskMeta({ rating, riskSummary, error }) {
+  if (error) {
+    return { tone: "danger", label: "Attention", score: 28 };
+  }
+
+  const score = overlayScoreFromRating(rating);
+  const summary = cleanText(riskSummary || "").toLowerCase();
+
+  if (score !== null) {
+    if (score >= 78) return { tone: "safe", label: "Safe", score };
+    if (score >= 50) return { tone: "warning", label: "Warning", score };
+    return { tone: "danger", label: "Danger", score };
+  }
+
+  if (/(high|risky|extensive|broad|profiling|tracking|share|ads|cross-service)/.test(summary)) {
+    return { tone: "warning", label: "Warning", score: 55 };
+  }
+
+  return { tone: "neutral", label: "Review", score: 48 };
+}
+
+function overlaySourceLabel(source) {
+  if (!source) return "";
+  return source === "AI" ? "Gemini AI" : source;
+}
+
+function overlayIconSvg(tone) {
+  if (tone === "safe") {
+    return "<svg viewBox='0 0 24 24' fill='none' aria-hidden='true'><path d='M20 6 9 17l-5-5' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+  }
+
+  if (tone === "danger") {
+    return "<svg viewBox='0 0 24 24' fill='none' aria-hidden='true'><path d='M12 8v4m0 4h.01M10.3 3.8 2.9 17a2 2 0 0 0 1.74 3h14.72A2 2 0 0 0 21.1 17L13.7 3.8a2 2 0 0 0-3.4 0Z' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+  }
+
+  if (tone === "warning") {
+    return "<svg viewBox='0 0 24 24' fill='none' aria-hidden='true'><path d='M12 9v4m0 4h.01M12 3l9 16H3L12 3Z' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+  }
+
+  return "<svg viewBox='0 0 24 24' fill='none' aria-hidden='true'><path d='M12 3 5 6v6c0 4.4 2.7 8.44 7 10 4.3-1.56 7-5.6 7-10V6l-7-3Z' stroke='currentColor' stroke-width='1.7' stroke-linejoin='round'/><path d='m9.5 12 1.7 1.7 3.3-3.4' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/></svg>";
+}
+
+function defaultOverlayPosition() {
+  const width = Math.min(380, Math.max(280, window.innerWidth - 24));
+  return {
+    left: Math.max(12, window.innerWidth - width - 18),
+    top: 18
+  };
+}
+
+function clampOverlayPosition() {
+  if (!overlayRoot) return;
+
+  const rect = overlayRoot.getBoundingClientRect();
+  const maxLeft = Math.max(12, window.innerWidth - rect.width - 12);
+  const maxTop = Math.max(12, window.innerHeight - rect.height - 12);
+
+  overlayState.left = Math.min(Math.max(overlayState.left ?? 12, 12), maxLeft);
+  overlayState.top = Math.min(Math.max(overlayState.top ?? 12, 12), maxTop);
+}
+
+function applyOverlayPosition() {
+  if (!overlayRoot) return;
+  clampOverlayPosition();
+  overlayRoot.style.left = `${overlayState.left}px`;
+  overlayRoot.style.top = `${overlayState.top}px`;
+}
+
 function ensureOverlay() {
   if (overlayRoot && document.body.contains(overlayRoot)) {
     return overlayRoot;
@@ -529,97 +1172,178 @@ function ensureOverlay() {
 
   overlayRoot = document.createElement("div");
   overlayRoot.id = "ai-tos-overlay";
-  overlayRoot.style.position = "fixed";
-  overlayRoot.style.right = "16px";
-  overlayRoot.style.bottom = "16px";
-  overlayRoot.style.width = "360px";
-  overlayRoot.style.maxHeight = "70vh";
-  overlayRoot.style.overflow = "auto";
-  overlayRoot.style.background = "#ffffff";
-  overlayRoot.style.border = "1px solid #d1d5db";
-  overlayRoot.style.borderRadius = "14px";
-  overlayRoot.style.boxShadow = "0 14px 40px rgba(0,0,0,0.2)";
-  overlayRoot.style.zIndex = "2147483647";
-  overlayRoot.style.fontFamily = "ui-sans-serif, system-ui, -apple-system";
-  overlayRoot.style.color = "#111827";
+  overlayRoot.className = "tos-overlay-root";
+
+  if (overlayState.left === null || overlayState.top === null) {
+    const initialPosition = defaultOverlayPosition();
+    overlayState.left = initialPosition.left;
+    overlayState.top = initialPosition.top;
+  }
 
   document.body.appendChild(overlayRoot);
+  applyOverlayPosition();
   return overlayRoot;
+}
+
+function closeOverlay() {
+  stopOverlayDrag();
+  overlayState.minimized = false;
+  if (overlayRoot?.isConnected) {
+    overlayRoot.remove();
+  }
+  overlayRoot = null;
+}
+
+function stopOverlayDrag() {
+  document.removeEventListener("mousemove", onOverlayDrag);
+  document.removeEventListener("mouseup", stopOverlayDrag);
+}
+
+function onOverlayDrag(event) {
+  overlayState.left = event.clientX - overlayState.dragOffsetX;
+  overlayState.top = event.clientY - overlayState.dragOffsetY;
+  applyOverlayPosition();
+}
+
+function startOverlayDrag(event) {
+  if (!(event.target instanceof Element)) return;
+  if (event.target.closest("button")) return;
+
+  const root = ensureOverlay();
+  const rect = root.getBoundingClientRect();
+  overlayState.dragOffsetX = event.clientX - rect.left;
+  overlayState.dragOffsetY = event.clientY - rect.top;
+
+  document.addEventListener("mousemove", onOverlayDrag);
+  document.addEventListener("mouseup", stopOverlayDrag);
+}
+
+function syncOverlayStateClasses(root) {
+  root.classList.toggle("is-minimized", overlayState.minimized);
 }
 
 function handleAcknowledge() {
   currentSession.acknowledged = true;
   unblockActionButtons();
-
-  const root = ensureOverlay();
-  const unlockNote = root.querySelector("#ai-tos-unlock-note");
-  const ackBtn = root.querySelector("#ai-tos-ack");
-
-  if (ackBtn) {
-    ackBtn.remove();
-  }
-
-  if (unlockNote) {
-    unlockNote.textContent = "Signup/continue controls are unlocked.";
-    unlockNote.style.color = "#065f46";
-  }
-
-  const header = root.querySelector("#ai-tos-header-title");
-  if (header) {
-    header.textContent = `${header.textContent} (Reviewed)`;
+  if (overlayState.lastPayload) {
+    renderOverlay({
+      ...overlayState.lastPayload,
+      title: `${overlayState.lastPayload.title.replace(/ \(Reviewed\)$/, "")} (Reviewed)`,
+      requireAck: false,
+      riskSummary:
+        overlayState.lastPayload.riskSummary || "Review complete. Signup and continue controls are now unlocked."
+    });
   }
 }
 
 function renderOverlay({ title, subtitle, source, rating, riskSummary, keyPoints, error, requireAck }) {
   const root = ensureOverlay();
-
-  const keyPointsHtml = (keyPoints || []).map((point) => `<li style='margin-bottom:6px;'>${escapeHtml(point)}</li>`).join("");
-
   const showAck = Boolean(requireAck && !currentSession.acknowledged);
-  const closeButton = showAck
-    ? ""
-    : "<button id='ai-tos-close' style='border:none;background:#f3f4f6;border-radius:8px;padding:4px 8px;cursor:pointer;'>Close</button>";
+  const riskMeta = overlayRiskMeta({ rating, riskSummary, error });
+  const score = riskMeta.score ?? 48;
+  const toneClass = `risk-${riskMeta.tone}`;
+  const keyPointsHtml = (keyPoints || [])
+    .map((point) => `<li class="tos-overlay-point">${escapeHtml(point)}</li>`)
+    .join("");
+
+  overlayState.lastPayload = { title, subtitle, source, rating, riskSummary, keyPoints, error, requireAck };
+
+  if (showAck) {
+    overlayState.minimized = false;
+  }
+
+  root.className = `tos-overlay-root ${toneClass}`;
+  applyOverlayTheme(root, riskMeta.tone);
+  syncOverlayStateClasses(root);
 
   root.innerHTML = `
-    <div style="padding: 12px 14px 4px 14px; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center;">
-      <div>
-        <div id="ai-tos-header-title" style="font-weight: 700; font-size: 14px;">${escapeHtml(title)}</div>
-        <div style="font-size: 12px; color: #4b5563; margin-top: 2px;">${escapeHtml(subtitle)}</div>
+    <div class="tos-overlay-card">
+      <div class="tos-overlay-header" id="ai-tos-drag-handle">
+        <div class="tos-overlay-brand">
+          <div class="tos-overlay-icon">${overlayIconSvg(riskMeta.tone)}</div>
+          <div class="tos-overlay-heading">
+            <div class="tos-overlay-eyebrow">AI ToS Analyzer</div>
+            <div id="ai-tos-header-title" class="tos-overlay-title">${escapeHtml(title)}</div>
+            <div class="tos-overlay-subtitle">${escapeHtml(subtitle)}</div>
+          </div>
+        </div>
+        <div class="tos-overlay-actions">
+          <button id="ai-tos-minimize" class="tos-icon-button" type="button" aria-label="Minimize analyzer">
+            <span class="tos-icon-line"></span>
+          </button>
+          ${
+            showAck
+              ? ""
+              : "<button id='ai-tos-close' class='tos-icon-button' type='button' aria-label='Close analyzer'><span class='tos-close-icon'></span></button>"
+          }
+        </div>
       </div>
-      ${closeButton}
-    </div>
-    <div style="padding: 12px 14px 14px 14px; font-size: 13px; line-height: 1.45;">
-      ${error ? `<div style='color:#b91c1c; margin-bottom:10px;'>${escapeHtml(error)}</div>` : ""}
-      ${source ? `<div style='margin-bottom: 8px;'><strong>Source:</strong> ${escapeHtml(source)}${rating ? ` (Rating: ${escapeHtml(rating)})` : ""}</div>` : ""}
-      ${riskSummary ? `<div style='margin-bottom: 10px;'><strong>Risk summary:</strong> ${escapeHtml(riskSummary)}</div>` : ""}
-      ${keyPoints?.length ? `<div><strong>Key points</strong><ul style='margin: 8px 0 0 18px;'>${keyPointsHtml}</ul></div>` : ""}
-      ${
-        showAck
-          ? "<div id='ai-tos-unlock-note' style='margin-top:10px;color:#7c2d12;'>Continue/signup controls are paused until reviewed.</div>"
-          : ""
-      }
-      ${
-        showAck
-          ? "<button id='ai-tos-ack' style='margin-top:12px;border:0;border-radius:10px;padding:9px 12px;background:#111827;color:#fff;cursor:pointer;font-weight:600;'>I understand, continue</button>"
-          : ""
-      }
+
+      <div class="tos-overlay-body">
+        <div class="tos-overlay-topline">
+          <span class="tos-overlay-badge">${escapeHtml(riskMeta.label)}</span>
+          ${rating ? `<span class="tos-overlay-chip">Rating ${escapeHtml(rating)}</span>` : ""}
+          ${source ? `<span class="tos-overlay-chip">${escapeHtml(overlaySourceLabel(source))}</span>` : ""}
+          <span class="tos-overlay-score">Risk score ${escapeHtml(score)}/100</span>
+        </div>
+
+        ${
+          error
+            ? `<div class="tos-overlay-note is-error">${escapeHtml(error)}</div>`
+            : `<div class="tos-overlay-summary">${escapeHtml(riskSummary || "Summary is being prepared.")}</div>`
+        }
+
+        ${
+          keyPoints?.length
+            ? `<div class="tos-overlay-section"><div class="tos-overlay-section-title">Key points</div><ul class="tos-overlay-points">${keyPointsHtml}</ul></div>`
+            : ""
+        }
+
+        <div id="ai-tos-unlock-note" class="tos-overlay-note ${showAck ? "is-warning" : "is-success"}">
+          ${
+            showAck
+              ? "Signup and continue controls are paused until you review this summary."
+              : "You can drag, minimize, or dismiss this card while browsing."
+          }
+        </div>
+
+        <div class="tos-overlay-footer">
+          ${
+            showAck
+              ? "<button id='ai-tos-ack' class='tos-button is-primary' type='button'>I understand, continue</button>"
+              : "<button id='ai-tos-close-secondary' class='tos-button is-secondary' type='button'>Dismiss</button>"
+          }
+          <button id="ai-tos-minimize-secondary" class="tos-button is-ghost" type="button">
+            ${overlayState.minimized ? "Expand" : "Minimize"}
+          </button>
+        </div>
+      </div>
     </div>
   `;
 
-  const closeBtn = root.querySelector("#ai-tos-close");
-  if (closeBtn) {
-    closeBtn.addEventListener("click", () => {
-      root.remove();
-    });
-  }
+  applyOverlayPosition();
 
-  const ackBtn = root.querySelector("#ai-tos-ack");
-  if (ackBtn) {
-    ackBtn.addEventListener("click", handleAcknowledge);
-  }
+  const dragHandle = root.querySelector("#ai-tos-drag-handle");
+  dragHandle?.addEventListener("mousedown", startOverlayDrag);
+
+  const minimize = () => {
+    overlayState.minimized = !overlayState.minimized;
+    syncOverlayStateClasses(root);
+    applyOverlayPosition();
+    const secondaryLabel = root.querySelector("#ai-tos-minimize-secondary");
+    if (secondaryLabel) {
+      secondaryLabel.textContent = overlayState.minimized ? "Expand" : "Minimize";
+    }
+  };
+
+  root.querySelector("#ai-tos-minimize")?.addEventListener("click", minimize);
+  root.querySelector("#ai-tos-minimize-secondary")?.addEventListener("click", minimize);
+  root.querySelector("#ai-tos-close")?.addEventListener("click", closeOverlay);
+  root.querySelector("#ai-tos-close-secondary")?.addEventListener("click", closeOverlay);
+  root.querySelector("#ai-tos-ack")?.addEventListener("click", handleAcknowledge);
 }
 
-function submitForAnalysis(extractedText, requireAck) {
+function submitForAnalysis(extractedText, requireAck, sourceUrl = window.location.href) {
   currentSession.analysisInFlight = true;
 
   chrome.runtime.sendMessage(
@@ -627,7 +1351,7 @@ function submitForAnalysis(extractedText, requireAck) {
       type: "ANALYZE_TOS",
       payload: {
         domain: window.location.hostname,
-        url: window.location.href,
+        url: sourceUrl,
         text: extractedText
       }
     },
@@ -645,73 +1369,85 @@ function submitForAnalysis(extractedText, requireAck) {
   );
 }
 
-function runScan(trigger = "manual") {
+async function runScan(trigger = "manual") {
   if (!canRunOnPage()) return;
+  if (currentSession.scanInProgress) return;
   if (trigger === "auto" && currentSession.analysisInFlight) return;
 
-  const domain = normalizeDomain(window.location.hostname);
-  const authContext = detectAuthContext();
+  currentSession.scanInProgress = true;
+  try {
+    const domain = normalizeDomain(window.location.hostname);
+    const authContext = detectAuthContext();
 
-  if (trigger === "auto" && !authContext.isAuthPage) {
-    return;
-  }
-
-  if (authContext.isAuthPage) {
-    currentSession.requireAck = true;
-    currentSession.acknowledged = false;
-    currentSession.domain = domain;
-
-    if (authContext.actions.length > 0) {
-      blockActionButtons(authContext.actions);
+    if (trigger === "auto" && !authContext.isAuthPage) {
+      return;
     }
-  } else {
-    currentSession.requireAck = false;
-    currentSession.acknowledged = false;
-    currentSession.domain = domain;
-    unblockActionButtons();
-  }
 
-  const preset = findPreset(domain);
-  if (preset) {
+    if (authContext.isAuthPage) {
+      currentSession.requireAck = true;
+      currentSession.acknowledged = false;
+      currentSession.domain = domain;
+
+      if (authContext.actions.length > 0) {
+        blockActionButtons(authContext.actions);
+      }
+    } else {
+      currentSession.requireAck = false;
+      currentSession.acknowledged = false;
+      currentSession.domain = domain;
+      unblockActionButtons();
+    }
+
+    const preset = findPreset(domain);
+    if (preset) {
+      renderOverlay({
+        title: authContext.isAuthPage ? "Signup/Login ToS Summary" : "Website ToS Summary",
+        subtitle: domain,
+        source: preset.source,
+        rating: preset.rating,
+        riskSummary: preset.risk_summary,
+        keyPoints: preset.key_points,
+        requireAck: authContext.isAuthPage
+      });
+      return;
+    }
+
+    const extractedFromPage = extractPolicyText();
+    const resolvedPolicy = await resolvePolicyTextWithFooterFallback(extractedFromPage);
+    const extractedText = resolvedPolicy.text;
+    const analysisUrl = resolvedPolicy.sourceUrl;
+
+    if (!extractedText) {
+      renderOverlay({
+        title: "ToS Analyzer",
+        subtitle: domain,
+        error: "Could not find policy text on this page. Try a signup/login page with visible terms.",
+        requireAck: authContext.isAuthPage
+      });
+      return;
+    }
+
+    const fingerprint = `${domain}:${analysisUrl}:${extractedText.slice(0, 700)}`;
+    if (trigger === "auto" && fingerprint === currentSession.lastFingerprint) {
+      return;
+    }
+    currentSession.lastFingerprint = fingerprint;
+
     renderOverlay({
-      title: authContext.isAuthPage ? "Signup/Login ToS Summary" : "Website ToS Summary",
+      title: authContext.isAuthPage ? "Checking terms before signup..." : "Analyzing policy text...",
       subtitle: domain,
-      source: preset.source,
-      rating: preset.rating,
-      riskSummary: preset.risk_summary,
-      keyPoints: preset.key_points,
+      riskSummary: authContext.isAuthPage
+        ? "Signup/continue controls are paused until this summary is reviewed."
+        : resolvedPolicy.fromPolicyLink
+          ? "Found a Terms/Privacy link (usually footer) and analyzing that policy page."
+          : "Detected policy text, requesting summary.",
       requireAck: authContext.isAuthPage
     });
-    return;
+
+    submitForAnalysis(extractedText, authContext.isAuthPage, analysisUrl);
+  } finally {
+    currentSession.scanInProgress = false;
   }
-
-  const extractedText = extractPolicyText();
-  if (!extractedText) {
-    renderOverlay({
-      title: "ToS Analyzer",
-      subtitle: domain,
-      error: "Could not find policy text on this page. Try a signup/login page with visible terms.",
-      requireAck: authContext.isAuthPage
-    });
-    return;
-  }
-
-  const fingerprint = `${domain}:${extractedText.slice(0, 700)}`;
-  if (trigger === "auto" && fingerprint === currentSession.lastFingerprint) {
-    return;
-  }
-  currentSession.lastFingerprint = fingerprint;
-
-  renderOverlay({
-    title: authContext.isAuthPage ? "Checking terms before signup..." : "Analyzing policy text...",
-    subtitle: domain,
-    riskSummary: authContext.isAuthPage
-      ? "Signup/continue controls are paused until this summary is reviewed."
-      : "Detected policy text, requesting summary.",
-    requireAck: authContext.isAuthPage
-  });
-
-  submitForAnalysis(extractedText, authContext.isAuthPage);
 }
 
 function maybeAutoScan() {
@@ -837,6 +1573,7 @@ function wireAutoDetection() {
   const routeChanged = () => {
     autoTriggeredPageKey = "";
     currentSession.lastFingerprint = "";
+    currentSession.weakTextRetries = 0;
     window.setTimeout(maybeAutoScan, 250);
   };
 
@@ -867,6 +1604,11 @@ chrome.runtime.onMessage.addListener((message) => {
     currentSession.analysisInFlight = false;
 
     const result = message.result || {};
+    if (looksLikeMissingPolicyTextSummary(result.risk_summary || "") && scheduleWeakTextRetry()) {
+      return;
+    }
+
+    currentSession.weakTextRetries = 0;
     renderOverlay({
       title: currentSession.requireAck ? "Signup/Login ToS Summary" : "ToS Summary",
       subtitle: result.domain || currentSession.domain || window.location.hostname,
@@ -882,6 +1624,11 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "ANALYZE_ERROR") {
     currentSession.analysisInFlight = false;
 
+    const errorText = String(message.error || "");
+    if (errorText.includes("Provide extracted text for AI analysis") && scheduleWeakTextRetry()) {
+      return;
+    }
+
     renderOverlay({
       title: "ToS Analyzer",
       subtitle: currentSession.domain || window.location.hostname,
@@ -894,8 +1641,10 @@ chrome.runtime.onMessage.addListener((message) => {
 if (canRunOnPage()) {
   guardBlockedInteractions();
   wireAutoDetection();
+  window.addEventListener("resize", applyOverlayPosition);
 }
 
 window.addEventListener("beforeunload", () => {
+  stopOverlayDrag();
   unblockActionButtons();
 });

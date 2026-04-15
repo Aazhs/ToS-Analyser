@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Any
 
 from google import genai
+
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_code_fences(text: str) -> str:
@@ -44,6 +48,24 @@ def _fallback_summary(domain: str) -> dict[str, Any]:
     }
 
 
+def _api_error_summary(domain: str, reason: str) -> dict[str, Any]:
+    return {
+        "domain": domain,
+        "source": "AI",
+        "rating": None,
+        "risk_summary": "Automated AI analysis is temporarily unavailable. Try again shortly.",
+        "key_points": [
+            "The Gemini request failed, likely due to quota/rate limits or a transient API issue.",
+            f"Provider detail: {reason[:220]}",
+            "ToS;DR data will still be used whenever available.",
+        ],
+        "risks": "Not clearly specified due to temporary AI provider failure.",
+        "data_usage": "Not clearly specified due to temporary AI provider failure.",
+        "hidden_costs": "Not clearly specified due to temporary AI provider failure.",
+        "user_rights": "Not clearly specified due to temporary AI provider failure.",
+    }
+
+
 def analyze_text_with_gemini(domain: str, text: str) -> dict[str, Any]:
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
@@ -76,9 +98,22 @@ Text:
 {text[:16000]}
 """
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    raw = response.text or "{}"
-    parsed = _safe_json_parse(raw)
+    try:
+        response = client.models.generate_content(model=model, contents=prompt)
+    except Exception as exc:  # pragma: no cover - network/provider failures
+        logger.exception("Gemini request failed for domain=%s", domain)
+        return _api_error_summary(domain, str(exc))
+
+    raw = response.text or ""
+    if not raw.strip():
+        logger.warning("Gemini returned empty response text for domain=%s", domain)
+        return _api_error_summary(domain, "Empty response text from Gemini")
+
+    try:
+        parsed = _safe_json_parse(raw)
+    except Exception as exc:  # pragma: no cover - malformed model output
+        logger.exception("Gemini response parsing failed for domain=%s", domain)
+        return _api_error_summary(domain, f"Malformed JSON response: {exc}")
 
     key_points = parsed.get("key_points")
     if not isinstance(key_points, list):
