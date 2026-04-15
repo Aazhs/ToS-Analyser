@@ -531,6 +531,273 @@ function extractPolicyText() {
   return extractFallbackPageText();
 }
 
+function parseColorToRgb(input) {
+  if (!input) return null;
+  const value = String(input).trim().toLowerCase();
+  if (!value || value === "transparent") return null;
+
+  const rgbMatch = value.match(/rgba?\(([^)]+)\)/);
+  if (rgbMatch) {
+    const parts = rgbMatch[1].split(",").map((part) => Number(part.trim()));
+    if (parts.length >= 3 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && Number.isFinite(parts[2])) {
+      return {
+        r: Math.max(0, Math.min(255, Math.round(parts[0]))),
+        g: Math.max(0, Math.min(255, Math.round(parts[1]))),
+        b: Math.max(0, Math.min(255, Math.round(parts[2]))),
+        a: parts.length >= 4 && Number.isFinite(parts[3]) ? Math.max(0, Math.min(1, parts[3])) : 1
+      };
+    }
+  }
+
+  const hex = value.replace("#", "");
+  if (hex.length === 3) {
+    return {
+      r: parseInt(`${hex[0]}${hex[0]}`, 16),
+      g: parseInt(`${hex[1]}${hex[1]}`, 16),
+      b: parseInt(`${hex[2]}${hex[2]}`, 16),
+      a: 1
+    };
+  }
+  if (hex.length === 6) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+      a: 1
+    };
+  }
+
+  return null;
+}
+
+function rgbToString(color, alpha = null) {
+  if (!color) return "";
+  if (alpha === null) {
+    return `rgb(${color.r}, ${color.g}, ${color.b})`;
+  }
+  return `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
+}
+
+function blendColors(base, mix, ratio) {
+  const t = Math.max(0, Math.min(1, ratio));
+  return {
+    r: Math.round(base.r + (mix.r - base.r) * t),
+    g: Math.round(base.g + (mix.g - base.g) * t),
+    b: Math.round(base.b + (mix.b - base.b) * t),
+    a: 1
+  };
+}
+
+function colorBrightness(color) {
+  if (!color) return 255;
+  return color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
+}
+
+function relativeLuminance(color) {
+  const convert = (value) => {
+    const v = value / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const r = convert(color.r);
+  const g = convert(color.g);
+  const b = convert(color.b);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(a, b) {
+  const l1 = relativeLuminance(a);
+  const l2 = relativeLuminance(b);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function ensureReadableText(baseText, background) {
+  const darkCandidate = { r: 17, g: 24, b: 39, a: 1 };
+  const lightCandidate = { r: 248, g: 250, b: 252, a: 1 };
+  const baseContrast = contrastRatio(baseText, background);
+  if (baseContrast >= 4.8) {
+    return baseText;
+  }
+
+  const darkContrast = contrastRatio(darkCandidate, background);
+  const lightContrast = contrastRatio(lightCandidate, background);
+  return darkContrast >= lightContrast ? darkCandidate : lightCandidate;
+}
+
+function colorSaturation(color) {
+  if (!color) return 0;
+  const max = Math.max(color.r, color.g, color.b);
+  const min = Math.min(color.r, color.g, color.b);
+  return max - min;
+}
+
+function pickSiteAccent() {
+  const candidates = [];
+  const selectors = [
+    "button",
+    "a[href]",
+    "[role='button']",
+    "input[type='submit']",
+    "input[type='button']",
+    "[class*='btn']",
+    "[class*='button']"
+  ];
+
+  selectors.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((element) => {
+      if (candidates.length > 42) return;
+      const style = window.getComputedStyle(element);
+      const bg = parseColorToRgb(style.backgroundColor);
+      const fg = parseColorToRgb(style.color);
+      const border = parseColorToRgb(style.borderColor);
+      [bg, fg, border].forEach((color) => {
+        if (color && color.a > 0.2) candidates.push(color);
+      });
+    });
+  });
+
+  const link = document.querySelector("a[href]");
+  if (link) {
+    const linkColor = parseColorToRgb(window.getComputedStyle(link).color);
+    if (linkColor) candidates.unshift(linkColor);
+  }
+
+  const vivid = candidates.find((color) => colorSaturation(color) > 35);
+  return vivid || candidates[0] || { r: 99, g: 102, b: 241, a: 1 };
+}
+
+function detectDominantSurfaceColor() {
+  const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+  const selectors = ["main", "[role='main']", "section", "article", "div", "body", "html"];
+  const scored = [];
+  let inspected = 0;
+
+  for (const selector of selectors) {
+    const nodes = document.querySelectorAll(selector);
+    for (const element of nodes) {
+      if (inspected > 180) break;
+      inspected += 1;
+
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 80 || rect.height < 80) continue;
+      if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
+
+      const style = window.getComputedStyle(element);
+      const color = parseColorToRgb(style.backgroundColor);
+      if (!color || color.a < 0.85) continue;
+
+      const visibleWidth = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);
+      const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+      if (visibleWidth <= 0 || visibleHeight <= 0) continue;
+
+      const areaRatio = (visibleWidth * visibleHeight) / viewportArea;
+      const weight = areaRatio * (1 + Math.max(0, 45 - colorSaturation(color)) / 120);
+      scored.push({ color, weight });
+    }
+    if (inspected > 180) break;
+  }
+
+  if (!scored.length) return null;
+  scored.sort((a, b) => b.weight - a.weight);
+  return scored[0].color;
+}
+
+function detectSiteTheme(tone) {
+  const htmlStyle = window.getComputedStyle(document.documentElement);
+  const bodyStyle = window.getComputedStyle(document.body || document.documentElement);
+
+  const htmlBg = parseColorToRgb(htmlStyle.backgroundColor);
+  const bodyBg = parseColorToRgb(bodyStyle.backgroundColor);
+  const sampledBg = detectDominantSurfaceColor();
+  const bg =
+    sampledBg ||
+    (bodyBg && bodyBg.a > 0.01 ? bodyBg : null) ||
+    htmlBg ||
+    { r: 248, g: 250, b: 252, a: 1 };
+
+  const bodyText = parseColorToRgb(bodyStyle.color) || parseColorToRgb(htmlStyle.color) || { r: 17, g: 24, b: 39, a: 1 };
+  const prefersDark =
+    typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const darkMode = colorBrightness(bg) < 145 || (prefersDark && colorBrightness(bg) < 175);
+
+  const siteAccent = pickSiteAccent();
+  const toneMap = {
+    safe: { r: 34, g: 197, b: 94, a: 1 },
+    warning: { r: 245, g: 158, b: 11, a: 1 },
+    danger: { r: 239, g: 68, b: 68, a: 1 },
+    neutral: siteAccent
+  };
+  const toneColor = toneMap[tone] || siteAccent;
+  const accent = blendColors(siteAccent, toneColor, tone === "neutral" ? 0 : 0.28);
+
+  const panel = darkMode ? blendColors(bg, { r: 255, g: 255, b: 255, a: 1 }, 0.06) : blendColors(bg, { r: 15, g: 23, b: 42, a: 1 }, 0.05);
+  const panelStrong = darkMode ? blendColors(bg, { r: 255, g: 255, b: 255, a: 1 }, 0.1) : blendColors(bg, { r: 15, g: 23, b: 42, a: 1 }, 0.1);
+  const textSeed = darkMode
+    ? blendColors(bodyText, { r: 255, g: 255, b: 255, a: 1 }, 0.18)
+    : blendColors(bodyText, { r: 0, g: 0, b: 0, a: 1 }, 0.04);
+  const text = ensureReadableText(textSeed, panelStrong);
+  const mutedSeed = darkMode ? blendColors(text, bg, 0.42) : blendColors(text, bg, 0.34);
+  const muted = ensureReadableText(mutedSeed, panelStrong);
+  const border = darkMode ? blendColors(panelStrong, { r: 255, g: 255, b: 255, a: 1 }, 0.22) : blendColors(panelStrong, { r: 0, g: 0, b: 0, a: 1 }, 0.16);
+
+  return {
+    accent,
+    accentSoft: rgbToString(accent, darkMode ? 0.22 : 0.18),
+    accentStrong: rgbToString(accent, darkMode ? 0.34 : 0.26),
+    panel: rgbToString(panel, darkMode ? 0.94 : 0.97),
+    panelStrong: rgbToString(panelStrong, darkMode ? 0.95 : 0.98),
+    text: rgbToString(text),
+    muted: rgbToString(muted),
+    border: rgbToString(border, darkMode ? 0.55 : 0.45),
+    buttonSurface: rgbToString(blendColors(panel, accent, darkMode ? 0.1 : 0.06), darkMode ? 0.8 : 0.85),
+    shadow: darkMode ? "0 20px 44px rgba(0,0,0,0.42)" : "0 18px 40px rgba(15,23,42,0.18)",
+    darkMode
+  };
+}
+
+function applyOverlayTheme(root, tone) {
+  const theme = detectSiteTheme(tone);
+  const chipSurface = theme.darkMode ? "rgba(255,255,255,0.12)" : "rgba(15,23,42,0.08)";
+  const panelSoft = theme.darkMode ? "rgba(15,23,42,0.64)" : "rgba(255,255,255,0.92)";
+  const borderSoft = theme.darkMode ? "rgba(148,163,184,0.16)" : "rgba(15,23,42,0.12)";
+  const warningTone = { r: 245, g: 158, b: 11, a: 1 };
+  const successTone = { r: 34, g: 197, b: 94, a: 1 };
+  const errorTone = { r: 239, g: 68, b: 68, a: 1 };
+  const noteWarningBg = theme.darkMode ? rgbToString(warningTone, 0.2) : rgbToString(warningTone, 0.16);
+  const noteWarningBorder = theme.darkMode ? rgbToString(warningTone, 0.34) : rgbToString(warningTone, 0.3);
+  const noteWarningText = theme.darkMode ? "rgb(254, 240, 200)" : "rgb(146, 64, 14)";
+  const noteSuccessBg = theme.darkMode ? rgbToString(successTone, 0.2) : rgbToString(successTone, 0.16);
+  const noteSuccessBorder = theme.darkMode ? rgbToString(successTone, 0.34) : rgbToString(successTone, 0.3);
+  const noteSuccessText = theme.darkMode ? "rgb(220, 252, 231)" : "rgb(22, 101, 52)";
+  const noteErrorBg = theme.darkMode ? rgbToString(errorTone, 0.2) : rgbToString(errorTone, 0.16);
+  const noteErrorBorder = theme.darkMode ? rgbToString(errorTone, 0.34) : rgbToString(errorTone, 0.3);
+  const noteErrorText = theme.darkMode ? "rgb(254, 226, 226)" : "rgb(153, 27, 27)";
+
+  root.style.setProperty("--tos-accent", rgbToString(theme.accent));
+  root.style.setProperty("--tos-accent-soft", theme.accentSoft);
+  root.style.setProperty("--tos-accent-strong", theme.accentStrong);
+  root.style.setProperty("--tos-site-panel", theme.panel);
+  root.style.setProperty("--tos-site-panel-strong", theme.panelStrong);
+  root.style.setProperty("--tos-site-panel-soft", panelSoft);
+  root.style.setProperty("--tos-site-text", theme.text);
+  root.style.setProperty("--tos-site-muted", theme.muted);
+  root.style.setProperty("--tos-site-border", theme.border);
+  root.style.setProperty("--tos-site-border-soft", borderSoft);
+  root.style.setProperty("--tos-site-button-surface", theme.buttonSurface);
+  root.style.setProperty("--tos-site-chip-surface", chipSurface);
+  root.style.setProperty("--tos-site-shadow", theme.shadow);
+  root.style.setProperty("--tos-note-warning-bg", noteWarningBg);
+  root.style.setProperty("--tos-note-warning-border", noteWarningBorder);
+  root.style.setProperty("--tos-note-warning-text", noteWarningText);
+  root.style.setProperty("--tos-note-success-bg", noteSuccessBg);
+  root.style.setProperty("--tos-note-success-border", noteSuccessBorder);
+  root.style.setProperty("--tos-note-success-text", noteSuccessText);
+  root.style.setProperty("--tos-note-error-bg", noteErrorBg);
+  root.style.setProperty("--tos-note-error-border", noteErrorBorder);
+  root.style.setProperty("--tos-note-error-text", noteErrorText);
+}
+
 function overlayScoreFromRating(rating) {
   if (!rating) return null;
   const map = { A: 92, B: 80, C: 62, D: 36, E: 18 };
@@ -693,6 +960,7 @@ function renderOverlay({ title, subtitle, source, rating, riskSummary, keyPoints
   }
 
   root.className = `tos-overlay-root ${toneClass}`;
+  applyOverlayTheme(root, riskMeta.tone);
   syncOverlayStateClasses(root);
 
   root.innerHTML = `
