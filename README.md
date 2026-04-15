@@ -11,8 +11,14 @@ Hackathon-ready full-stack prototype with:
 - Detects ToS/privacy/cookie language on pages.
 - Auto-detects signup/login pages and shows risk summary overlay.
 - Temporarily blocks auth actions (`continue`, `sign in`, `sign in with Google/Facebook/Apple`, etc.) until user acknowledgment.
+- Overlay supports drag + minimize/dismiss controls for less intrusive browsing.
+- Extension attempts footer/legal link discovery (Terms/Privacy pages) and analyzes the better policy text source.
+- Auto-retry recovery runs when extraction looks incomplete (helps after refresh/race conditions).
+- Popup is suppressed on Google Search results pages.
 - Backend checks ToS;DR first; falls back to Gemini if needed.
-- Common-site preset summaries for fast demo behavior.
+- Backend can fetch policy page text from submitted URL when client-side extracted text is weak.
+- Gemini failures (quota/transient/malformed output) degrade gracefully instead of returning a server crash.
+- Common-site preset summaries are expanded with richer default risk notes and policy cues.
 - Dashboard to view history and run manual domain analysis.
 
 ## Architecture
@@ -20,8 +26,10 @@ Hackathon-ready full-stack prototype with:
 ```text
 extension (content script + service worker)
   -> POST /analyze
+  -> optional FETCH_POLICY_TEXT for terms/privacy links
 backend (FastAPI)
   -> ToS;DR API (search/service)
+  -> optional policy page fetch from provided URL
   -> Gemini API fallback
   -> SQLite persistence
 frontend (Vite React dashboard)
@@ -180,9 +188,20 @@ npm run dev
 
 - Auto-detects likely auth pages using URL + input + action/button signals.
 - Blocks likely auth actions until user clicks **I understand, continue** in overlay.
+- Overlay can be dragged, minimized, and dismissed (while keeping required-ack flow on auth pages).
 - Uses common-site presets first for quick demo.
-- For non-common sites, sends extracted text to backend (`ToS;DR` first, then AI fallback).
+- For non-common sites, tries page text + likely footer Terms/Privacy links and prefers stronger policy-like text.
+- If the first summary indicates missing policy text, extension retries extraction automatically (bounded retries).
+- For non-common sites, sends extracted text + source URL to backend (`ToS;DR` first, then AI fallback).
+- Does not run on Google Search result pages.
 - Extension icon click still triggers a manual scan.
+
+## Backend Analysis Behavior
+
+- `/analyze` flow: normalize domain -> try ToS;DR -> fallback to Gemini.
+- If ToS;DR misses and payload text is weak, backend attempts server-side policy-page fetch from `url`.
+- Backend merges/replaces weak client text with stronger fetched policy text before Gemini call.
+- Gemini provider/parsing failures return a structured temporary-unavailable summary (no 500 crash path).
 
 ## Demo Flow
 
@@ -216,6 +235,18 @@ Usually means backend returned plain text error (like `Internal Server Error`).
 - Hard refresh the target page.
 - Verify backend is running.
 - Open extension service worker console from `chrome://extensions` to inspect errors.
+
+### You see “Automated AI analysis is temporarily unavailable”
+
+- Usually means Gemini quota/rate-limit or transient provider failure.
+- Verify `GEMINI_API_KEY` and `GEMINI_MODEL` in backend `.env`.
+- Retry after a short delay; backend now returns a graceful summary instead of crashing.
+
+### You see “No ToS;DR record found. Provide extracted text for AI analysis.”
+
+- Ensure request includes either visible policy text or a policy URL.
+- Extension now retries extraction and backend can fetch policy text from URL, so this should be less common.
+- If it persists on one site, that site may require site-specific extraction due to dynamic rendering.
 
 ### Python venv issues on latest Python versions
 
