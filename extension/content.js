@@ -53,105 +53,132 @@ const MIN_POLICY_TEXT_LENGTH = 280;
 const COMMON_SITE_PRESETS = {
   "google.com": {
     source: "Preset",
-    rating: "C",
-    risk_summary: "Google policies are broad; account activity can be used to personalize ads and services.",
+    rating: "D",
+    risk_summary: "Google can combine account, device, activity, and partner-site signals to personalize content and ads, but provides unusually strong self-service controls for review, export, and deletion.",
     key_points: [
-      "Data from many Google services can be combined.",
-      "Personalization settings exist but defaults are often data-forward.",
-      "Policy updates can be rolled out with notice in account channels."
+      "Google collects data when signed in and signed out, including device identifiers, activity logs, and location signals.",
+      "Data can be used to personalize services and ads across Google products and partner sites/apps using Google ad or analytics tools.",
+      "Google says it does not show personalized ads based on sensitive categories, and not based on Gmail, Drive, or Photos content.",
+      "Sharing can occur with your consent, with admins of managed/workspace domains, with processors, and for legal or security requests.",
+      "Controls include Privacy Checkup, My Activity, Ad Center, auto-delete timers, and Google Takeout export/deletion workflows.",
+      "Retention varies by data type; some data is deleted or anonymized on schedule, while other data persists for legal, fraud, or security reasons."
     ]
   },
   "facebook.com": {
     source: "Preset",
     rating: "D",
-    risk_summary: "Meta policies often allow extensive profiling and cross-service data use.",
+    risk_summary: "Facebook policy allows broad collection and profiling across Meta products and partner contexts, with user controls available but requiring active configuration.",
     key_points: [
-      "Behavior and interaction data may drive ad targeting.",
-      "Settings exist, but many controls require manual opt-out.",
-      "Policy language can be broad for future feature use."
+      "Meta states it may collect activity, device, and partner-provided data, including some data about non-users in certain cases.",
+      "Information may be used to personalize feeds, recommendations, and ads across Meta products and devices.",
+      "Meta states it does not sell personal information and does not share direct identifiers with advertisers without permission.",
+      "Data can be shared with integrated partners, service providers, other Meta companies, and for legal/safety responses.",
+      "You can use settings for ad preferences, off-Meta activity controls, account download/port/delete, and privacy checkups.",
+      "Retention is case-by-case and may be extended for legal obligations, safety investigations, and abuse prevention."
     ]
   },
   "instagram.com": {
     source: "Preset",
     rating: "D",
-    risk_summary: "Instagram data may be shared within Meta systems and used for ad personalization.",
+    risk_summary: "Instagram follows Meta Privacy Policy patterns: broad activity and device collection, cross-product data use, and ad personalization with controls that must be actively managed.",
     key_points: [
-      "[Good] The service will not allow third parties to access your personal information without a legal basis",
-      "[Bad] Usernames can be rejected for any reason",
-      "[Bad] This service uses third-party cookies for statistics",
-      "[Neutral] The service informs users that its privacy policy does not apply to third party websites",
-      "[Neutral] You agree to defend, indemnify, and hold the service harmless in case of a claim related to your use of the service",
-      "[Neutral] The service provider makes no warranty regarding uninterrupted, timely, secure or error-free service"
+      "Meta policy states data can be collected from your activity, device/browser, contacts, and partners/vendors.",
+      "Data may be used to personalize Instagram features, recommendations, and advertising on and off Meta properties.",
+      "Meta companies may share data internally for safety, personalization, and product integration.",
+      "Sharing can occur with advertisers/partners in aggregated or governed forms, with integrated apps, and for legal requests.",
+      "Controls exist for ad preferences, data access/download/delete requests, account center privacy settings, and connected apps.",
+      "Policy includes possible international transfers and variable retention windows depending on feature, legal, and safety needs."
     ]
   },
   "x.com": {
     source: "Preset",
-    rating: "C",
-    risk_summary: "X/Twitter terms can change over time and include broad platform rights over user content operations.",
+    rating: "D",
+    risk_summary: "X is explicitly a public platform with broad data use for personalization and ads, broad content licensing rights, and strong enforcement/disclaimer language in terms.",
     key_points: [
-      "Platform may process content for safety, recommendation, and ads.",
-      "Certain dispute and enforcement terms can limit recourse speed.",
-      "Policy changes may be posted without direct per-user negotiation."
+      "Public posts and profile elements are generally viewable and searchable broadly, including outside X.",
+      "Policy describes collection of content/activity, device and log data, location signals, and partner-provided advertising data.",
+      "X uses data for recommendations, ad targeting and ad measurement on and off platform, with some controls in settings.",
+      "Retention examples include cookies up to 13 months, ad-partner data up to 12 months, and some support communications up to 18 months.",
+      "Terms grant X a broad worldwide license to user content and mention analysis/training use for machine learning and AI purposes.",
+      "Terms allow account suspension/termination for violations, legal risk, inactivity, or commercial viability; liability is heavily limited."
     ]
   },
   "twitter.com": {
     source: "Preset",
-    rating: "C",
-    risk_summary: "X/Twitter terms can change over time and include broad platform rights over user content operations.",
+    rating: "D",
+    risk_summary: "Twitter domain now routes to X policy framework, which includes public-by-default content visibility, broad ad/personalization data use, and expansive enforcement rights.",
     key_points: [
-      "Platform may process content for safety, recommendation, and ads.",
-      "Certain dispute and enforcement terms can limit recourse speed.",
-      "Policy changes may be posted without direct per-user negotiation."
+      "Public content and profile metadata are broadly accessible unless account visibility settings restrict them.",
+      "Collected data includes usage signals, interactions, device/log information, and partner/ad-tech identifiers.",
+      "X states it may combine partner data with account data for relevance, measurement, and anti-abuse uses.",
+      "Users can access/download account data and queue deletion via deactivation workflows, subject to retention/legal exceptions.",
+      "Terms include broad content license rights and permission for service improvement uses including AI/ML-related processing.",
+      "Service is provided as-is with significant warranty and liability limitations and jurisdiction-dependent dispute terms."
     ]
   },
   "amazon.com": {
     source: "Preset",
     rating: "C",
-    risk_summary: "Amazon policies allow extensive transactional and behavioral data processing across services.",
+    risk_summary: "Amazon account, commerce, and device ecosystem data can be extensively used for recommendations, fraud prevention, and ads, with controls available but distributed across account settings.",
     key_points: [
-      "Purchase and browsing data may be used for recommendations and ads.",
-      "Account and marketplace terms can differ by product/service line.",
-      "Recurring services can auto-renew unless canceled in settings."
+      "Amazon typically uses purchase history, browsing interactions, and device/app signals to personalize shopping and content experiences.",
+      "Data can be used for recommendation systems, security/fraud detection, customer support, and measurement of services and ads.",
+      "Information may be shared with affiliates, service providers, sellers/fulfillment partners, and for legal or transactional reasons.",
+      "Interest-based advertising and cookie preferences can generally be adjusted via ad preferences and account privacy controls.",
+      "Data access, download, correction, and deletion request paths exist, but practical scope may vary by region and legal obligations.",
+      "Order, tax, and anti-fraud records may be retained beyond account-level deletions where legally or operationally required."
     ]
   },
   "microsoft.com": {
     source: "Preset",
-    rating: "B",
-    risk_summary: "Microsoft generally provides clearer controls, but telemetry and service integration remain substantial.",
+    rating: "C",
+    risk_summary: "Microsoft policies are detailed and control-rich, but still permit broad collection, cross-product combination, and personalization/advertising uses depending on product and settings.",
     key_points: [
-      "Telemetry and diagnostics may be enabled by default in products.",
-      "Enterprise and consumer terms differ; verify your account type.",
-      "Privacy dashboard and export/delete tools are available."
+      "Microsoft collects data directly, from product interactions, from devices, and from third parties/affiliates.",
+      "Data is used to provide, secure, improve, and personalize products, plus advertising and marketing where applicable.",
+      "Policies describe combining data across Microsoft contexts to enable more consistent cross-product experiences.",
+      "Data can be shared with affiliates, vendors, legal authorities, and safety/security response channels.",
+      "User controls include the privacy dashboard, ad personalization opt-outs, communication preferences, and product-specific settings.",
+      "If your account is managed by employer or school, administrators may access account data, diagnostics, files, and settings."
     ]
   },
   "apple.com": {
     source: "Preset",
     rating: "B",
-    risk_summary: "Apple emphasizes privacy but still processes account, payment, and device usage data.",
+    risk_summary: "Apple emphasizes privacy-by-design and on-device controls, but still processes account, transaction, and usage data for service operation, personalization, and legal/security obligations.",
     key_points: [
-      "Data is used for service delivery, fraud prevention, and personalization.",
-      "Some personalization controls can be disabled per feature.",
-      "Subscription billing and renewals require active management."
+      "Apple’s policy states personal data is collected directly, from product usage, and from other sources where permitted.",
+      "Product-level privacy notices and settings are integrated in features that request sensitive access.",
+      "Data may be used for service provision, account security, fraud prevention, communications, and product improvement.",
+      "Sharing may occur with service providers, affiliates, legal authorities, and in limited business transfer situations.",
+      "Users generally have rights and tools for access, correction, deletion, portability, and account/privacy preference management.",
+      "Cross-border transfers are addressed with safeguards and region-specific rights disclosures in policy materials."
     ]
   },
   "linkedin.com": {
     source: "Preset",
     rating: "C",
-    risk_summary: "LinkedIn may use profile and activity data for recommendations, outreach, and ads.",
+    risk_summary: "LinkedIn is professional-network centric but uses extensive profile, behavioral, and inferred data for recommendations, recruiting surfaces, and ad targeting on and off platform.",
     key_points: [
-      "Professional and engagement data can affect ranking/visibility.",
-      "Visibility controls exist but defaults may expose more profile info.",
-      "Recruiting and ad products can involve extended data processing."
+      "Profile and professional data can be widely visible depending on settings, including discoverability outside LinkedIn.",
+      "LinkedIn uses service activity, cookies/tags, partner data, and inferred traits to personalize feed, jobs, and ads.",
+      "Advertising systems may use on- and off-site interaction data; opt-outs and ad settings are available for members and guests.",
+      "LinkedIn can share data with affiliates (including Microsoft), service providers, enterprise customers, and legal authorities.",
+      "Enterprise and recruiter products may expose limited profile fields to paying customers unless specific opt-outs are used.",
+      "Data is often retained while account is open, with some post-closure retention for legal, fraud, and security reasons."
     ]
   },
   "github.com": {
     source: "Preset",
     rating: "B",
-    risk_summary: "GitHub terms are usually developer-friendly, but hosted/public content has broad platform handling rights.",
+    risk_summary: "GitHub gives strong clarity around developer rights and repository controls, but public content is broadly accessible and terms include substantial disclaimers and broad service-operation licenses.",
     key_points: [
-      "Public repositories are inherently visible and indexable.",
-      "Security scanning and abuse detection process repository metadata.",
-      "Private repo controls exist, but org policies may override defaults."
+      "You retain ownership of your content, but grant GitHub licenses needed to host, index, display, and operate the service.",
+      "Public repositories are visible and forkable by design; private repositories are treated as confidential with limited access cases.",
+      "GitHub documents that private-repo access may occur for security, support, legal obligations, and integrity/abuse workflows.",
+      "Organization-provided accounts can be controlled by the organization, which may access usage and repository-related data.",
+      "Privacy statement covers sharing with affiliates, subprocessors, legal authorities, and selected partners/service providers.",
+      "On account cancellation, GitHub states broad profile/repo data deletion targets, but legal/security retention and forked/public copies may persist."
     ]
   }
 };
