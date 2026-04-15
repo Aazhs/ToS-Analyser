@@ -1,6 +1,10 @@
 import { motion } from "framer-motion";
-import { Menu, Shield, X } from "lucide-react";
+import { ExternalLink, Menu, Shield, X } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+
+const INSTALL_GUIDE_URL =
+  import.meta.env.VITE_EXTENSION_INSTRUCTIONS_URL ||
+  "https://github.com/Aazhs/ToS-Analyser/blob/main/README.md";
 
 export function Navbar({ sidebarOpen, onSidebarToggle, isDark, onThemeToggle }) {
   return (
@@ -50,6 +54,21 @@ export function Navbar({ sidebarOpen, onSidebarToggle, isDark, onThemeToggle }) 
             <span className="status-indicator" />
             Smooth legal review workspace
           </div>
+
+          <motion.a
+            href={INSTALL_GUIDE_URL}
+            target="_blank"
+            rel="noreferrer"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            className="header-link-button"
+            aria-label="Open extension install instructions on GitHub"
+          >
+            <span className="header-link-dot" aria-hidden="true" />
+            Install Browswe Extension
+            <ExternalLink size={14} />
+          </motion.a>
+
           <ThemeToggle isDark={isDark} onToggle={onThemeToggle} />
         </div>
       </div>

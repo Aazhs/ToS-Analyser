@@ -159,6 +159,78 @@
     color: rgb(var(--accent-amber));
   }
 
+  .header-link-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border: 1px solid rgba(249, 115, 22, 0.7);
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.98), rgba(249, 115, 22, 0.96));
+    color: rgb(255, 255, 255);
+    padding: 0.58rem 0.94rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    text-decoration: none;
+    box-shadow:
+      0 12px 20px rgba(249, 115, 22, 0.24),
+      0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+    animation: ctaPulse 2.2s ease-in-out infinite;
+    transition:
+      border-color 160ms ease,
+      background-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
+  }
+
+  .header-link-button:hover {
+    border-color: rgba(249, 115, 22, 0.95);
+    background: linear-gradient(135deg, rgba(251, 191, 36, 1), rgba(249, 115, 22, 1));
+    color: rgb(255, 255, 255);
+    box-shadow:
+      0 16px 28px rgba(249, 115, 22, 0.32),
+      0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+  }
+
+  .header-link-button:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 3px rgba(251, 191, 36, 0.34),
+      0 14px 24px rgba(249, 115, 22, 0.26);
+  }
+
+  .header-link-dot {
+    height: 0.5rem;
+    width: 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.22);
+    animation: ctaDotBlink 1.7s ease-in-out infinite;
+  }
+
+  @keyframes ctaPulse {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-1px);
+    }
+  }
+
+  @keyframes ctaDotBlink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.65;
+    }
+  }
+
   .brand-mark {
     display: inline-flex;
     align-items: center;
