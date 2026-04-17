@@ -47,8 +47,9 @@ const POLICY_LINK_HINTS = [
   "conditions"
 ];
 const POLICY_LINK_STOPWORDS = ["login", "signin", "sign in", "signup", "sign up", "register", "account", "support", "help"];
-const POLICY_FETCH_TIMEOUT_MS = 10000;
+const POLICY_FETCH_TIMEOUT_MS = 15000;
 const MIN_POLICY_TEXT_LENGTH = 280;
+const MAX_EMPTY_EXTRACTION_RETRIES = 3;
 
 const COMMON_SITE_PRESETS = {
   "google.com": {
@@ -196,7 +197,8 @@ let currentSession = {
   lastFingerprint: "",
   analysisInFlight: false,
   scanInProgress: false,
-  weakTextRetries: 0
+  weakTextRetries: 0,
+  emptyExtractionRetries: 0
 };
 const policyTextCache = new Map();
 
@@ -278,6 +280,30 @@ function scheduleWeakTextRetry() {
   window.setTimeout(() => {
     runScan("auto");
   }, 1200);
+
+  return true;
+}
+
+function scheduleEmptyExtractionRetry() {
+  if (currentSession.emptyExtractionRetries >= MAX_EMPTY_EXTRACTION_RETRIES) return false;
+
+  currentSession.emptyExtractionRetries += 1;
+  currentSession.analysisInFlight = false;
+  currentSession.lastFingerprint = "";
+  autoTriggeredPageKey = "";
+
+  const attempt = currentSession.emptyExtractionRetries;
+  renderOverlay({
+    title: "ToS Analyzer",
+    subtitle: currentSession.domain || normalizeDomain(window.location.hostname),
+    riskSummary: `Policy text not ready yet. Rechecking Terms/Privacy links... (${attempt}/${MAX_EMPTY_EXTRACTION_RETRIES})`,
+    requireAck: currentSession.requireAck,
+    keyPoints: []
+  });
+
+  window.setTimeout(() => {
+    runScan("auto");
+  }, 1100 + attempt * 650);
 
   return true;
 }
@@ -712,13 +738,49 @@ function isProbablyPolicyText(text) {
 function scorePolicyLink(anchor, targetUrl) {
   const text = cleanText(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label") || "").toLowerCase();
   const href = cleanText(targetUrl).toLowerCase();
+  let hostname = "";
+  try {
+    hostname = new URL(targetUrl).hostname.toLowerCase();
+  } catch {
+    hostname = "";
+  }
+  const sameSite = hostname ? isRelatedHost(hostname, window.location.hostname) : true;
   const parentFooterBoost = anchor.closest("footer") ? 30 : 0;
   const hintScore = POLICY_LINK_HINTS.reduce((acc, hint) => acc + (text.includes(hint) ? 18 : 0), 0);
   const hrefHint = POLICY_LINK_HINTS.reduce((acc, hint) => acc + (href.includes(hint.replaceAll(" ", "-")) || href.includes(hint) ? 10 : 0), 0);
   const stopPenalty = POLICY_LINK_STOPWORDS.reduce((acc, hint) => acc + (text.includes(hint) ? 20 : 0), 0);
   const privacyPathBoost = /privacy|terms|legal|policy/.test(href) ? 22 : 0;
   const shortTextBoost = text.length > 0 && text.length < 40 ? 4 : 0;
-  return parentFooterBoost + hintScore + hrefHint + privacyPathBoost + shortTextBoost - stopPenalty;
+  const externalPolicyHostBoost = !sameSite && /privacy|policy|terms|legal|consent|trust|onetrust|termly|iubenda/.test(hostname) ? 10 : 0;
+  const externalPenalty = sameSite ? 0 : 8;
+  return parentFooterBoost + hintScore + hrefHint + privacyPathBoost + shortTextBoost + externalPolicyHostBoost - stopPenalty - externalPenalty;
+}
+
+function hasStrongPolicySignal(linkText, href) {
+  const text = cleanText(linkText).toLowerCase();
+  const link = cleanText(href).toLowerCase();
+  const textHints = POLICY_LINK_HINTS.reduce((acc, hint) => acc + (text.includes(hint) ? 1 : 0), 0);
+  const hrefHints = POLICY_LINK_HINTS.reduce(
+    (acc, hint) => acc + (link.includes(hint) || link.includes(hint.replaceAll(" ", "-")) ? 1 : 0),
+    0
+  );
+  return textHints >= 1 || hrefHints >= 2 || /privacy|terms|legal|policy/.test(link);
+}
+
+function buildCommonPolicyPathCandidates() {
+  const origin = window.location.origin;
+  const paths = [
+    "/privacy",
+    "/privacy-policy",
+    "/privacy-notice",
+    "/terms",
+    "/terms-of-service",
+    "/terms-and-conditions",
+    "/legal",
+    "/cookie-policy"
+  ];
+
+  return paths.map((path) => ({ url: `${origin}${path}`, score: 24, guessed: true }));
 }
 
 function findLikelyPolicyLinks() {
@@ -737,8 +799,14 @@ function findLikelyPolicyLinks() {
     if (!["http:", "https:"].includes(resolved.protocol)) return;
     if (resolved.hash && resolved.pathname === window.location.pathname) return;
 
+    const linkText = cleanText(anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label") || "").toLowerCase();
+    const hrefValue = cleanText(`${resolved.origin}${resolved.pathname}${resolved.search}`).toLowerCase();
     const sameSite = isRelatedHost(resolved.hostname, window.location.hostname);
-    if (!sameSite) return;
+    const strongPolicySignal = hasStrongPolicySignal(linkText, hrefValue);
+    const likelyExternalPolicyHost = /privacy|policy|terms|legal|consent|trust|onetrust|termly|iubenda/.test(
+      String(resolved.hostname || "").toLowerCase()
+    );
+    if (!sameSite && !(strongPolicySignal && likelyExternalPolicyHost)) return;
 
     const normalizedUrl = `${resolved.origin}${resolved.pathname}${resolved.search}`;
     if (seen.has(normalizedUrl)) return;
@@ -750,8 +818,16 @@ function findLikelyPolicyLinks() {
     candidates.push({ url: normalizedUrl, score });
   });
 
+  if (candidates.length === 0 || candidates.every((candidate) => candidate.score < 30)) {
+    buildCommonPolicyPathCandidates().forEach((candidate) => {
+      if (seen.has(candidate.url) || candidate.url === window.location.href) return;
+      seen.add(candidate.url);
+      candidates.push(candidate);
+    });
+  }
+
   candidates.sort((a, b) => b.score - a.score);
-  return candidates.slice(0, 5);
+  return candidates.slice(0, 8);
 }
 
 function extractPolicyTextFromDocument(doc) {
@@ -1492,6 +1568,7 @@ async function runScan(trigger = "manual") {
 
     const preset = findPreset(domain);
     if (preset) {
+      currentSession.emptyExtractionRetries = 0;
       renderOverlay({
         title: authContext.isAuthPage ? "Signup/Login ToS Summary" : "Website ToS Summary",
         subtitle: domain,
@@ -1510,6 +1587,11 @@ async function runScan(trigger = "manual") {
     const analysisUrl = resolvedPolicy.sourceUrl;
 
     if (!extractedText || looksLikePlaceholderPolicyText(extractedText) || policyQualityScore(extractedText) < 30) {
+      const shouldRetry = trigger === "auto" || authContext.isAuthPage || document.readyState !== "complete";
+      if (shouldRetry && scheduleEmptyExtractionRetry()) {
+        return;
+      }
+
       renderOverlay({
         title: "ToS Analyzer",
         subtitle: domain,
@@ -1523,6 +1605,8 @@ async function runScan(trigger = "manual") {
     if (trigger === "auto" && fingerprint === currentSession.lastFingerprint) {
       return;
     }
+
+    currentSession.emptyExtractionRetries = 0;
     currentSession.lastFingerprint = fingerprint;
 
     renderOverlay({
@@ -1666,6 +1750,7 @@ function wireAutoDetection() {
     autoTriggeredPageKey = "";
     currentSession.lastFingerprint = "";
     currentSession.weakTextRetries = 0;
+    currentSession.emptyExtractionRetries = 0;
     window.setTimeout(maybeAutoScan, 250);
   };
 
@@ -1694,6 +1779,7 @@ chrome.runtime.onMessage.addListener((message) => {
 
   if (message?.type === "ANALYZE_RESULT") {
     currentSession.analysisInFlight = false;
+    currentSession.emptyExtractionRetries = 0;
 
     const result = message.result || {};
     if (looksLikeMissingPolicyTextSummary(result.risk_summary || "") && scheduleWeakTextRetry()) {
