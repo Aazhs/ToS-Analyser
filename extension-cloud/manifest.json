@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "AI ToS Analyzer (Cloud)",
+  "description": "Cloud build that analyzes Terms/Privacy using Render backend + Vercel dashboard.",
+  "version": "0.2.0",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>", "https://*.onrender.com/*", "https://*.vercel.app/*"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "css": ["content.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "AI ToS Analyzer (Cloud)"
+  }
+}
